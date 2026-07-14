@@ -5,3 +5,4 @@ outputs/
 **/bin/
 **/obj/
 .DS_Store
+*.tgz
