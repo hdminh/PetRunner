@@ -43,4 +43,27 @@ struct RustMonitorBridgeTests {
         #expect(store.selected?.sessionID == "selected")
         #expect(store.selectedIndex == 2)
     }
+
+    @Test func preservesTheCapturedCodexPromptTitleAcrossToolEvents() {
+        let promptPayload = Data(
+            #"{"cwd":"/Users/minhc/Documents/PetRunner","hook_event_name":"UserPromptSubmit","model":"gpt-5.6-terra","permission_mode":"default","prompt":"PetRunner monitor capture validation.","session_id":"codex-captured-session","transcript_path":null,"turn_id":"codex-captured-turn"}"#.utf8
+        )
+        let toolPayload = Data(
+            #"{"cwd":"/Users/minhc/Documents/PetRunner","hook_event_name":"PreToolUse","model":"gpt-5.6-terra","permission_mode":"default","session_id":"codex-captured-session","tool_input":{"command":"pwd"},"tool_name":"exec","tool_use_id":"toolu-captured","transcript_path":null,"turn_id":"codex-captured-turn"}"#.utf8
+        )
+
+        let prompt = RustMonitor.normalize(provider: .codex, payload: promptPayload, event: "UserPromptSubmit")
+        let tool = RustMonitor.normalize(provider: .codex, payload: toolPayload, event: "PreToolUse")
+
+        #expect(prompt?.sessionID == "codex-captured-session")
+        #expect(prompt?.displayName?.value == "PetRunner monitor capture validation.")
+        #expect(tool?.sessionID == prompt?.sessionID)
+        #expect(tool?.displayName == nil)
+
+        let store = RustAgentSessionStore()
+        store.upsert(prompt!)
+        store.upsert(tool!)
+
+        #expect(store.selected?.detailText == "PetRunner monitor capture validation.")
+    }
 }
