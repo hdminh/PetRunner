@@ -334,6 +334,7 @@ struct Envelope {
     version: i32,
     token: String,
     provider: AgentProvider,
+    #[serde(alias = "sessionID")]
     session_id: String,
     status: AgentStatus,
     display_name: Option<DisplayName>,
