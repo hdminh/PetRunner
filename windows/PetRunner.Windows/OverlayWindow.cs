@@ -36,7 +36,7 @@ internal sealed class OverlayWindow : Window, IDisposable
     {
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
-        Background = Brushes.Transparent;
+        Background = System.Windows.Media.Brushes.Transparent;
         Topmost = true;
         ShowInTaskbar = false;
         ShowActivated = false;
