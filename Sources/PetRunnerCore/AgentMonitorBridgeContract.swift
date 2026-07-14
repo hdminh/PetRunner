@@ -17,20 +17,29 @@ public struct AgentMonitorEnvelope: Codable, Equatable, Sendable {
     public let provider: AgentProvider
     public let sessionID: String
     public let status: AgentStatus
+    public let displayName: AgentSessionDisplayName?
 
-    public init(version: Int = Self.protocolVersion, token: String, provider: AgentProvider, sessionID: String, status: AgentStatus) {
+    public init(
+        version: Int = Self.protocolVersion,
+        token: String,
+        provider: AgentProvider,
+        sessionID: String,
+        status: AgentStatus,
+        displayName: AgentSessionDisplayName? = nil
+    ) {
         self.version = version
         self.token = token
         self.provider = provider
         self.sessionID = sessionID
         self.status = status
+        self.displayName = displayName
     }
 
     public func validated(expectedToken: String) throws -> NormalizedAgentEvent {
         guard version == Self.protocolVersion else { throw AgentMonitorBridgeError.unsupportedVersion }
         guard token == expectedToken, !token.isEmpty else { throw AgentMonitorBridgeError.invalidToken }
         guard !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AgentMonitorBridgeError.invalidSession }
-        return NormalizedAgentEvent(provider: provider, sessionID: sessionID, status: status)
+        return NormalizedAgentEvent(provider: provider, sessionID: sessionID, status: status, displayName: displayName)
     }
 
     public static func decode(_ data: Data, expectedToken: String) throws -> NormalizedAgentEvent {

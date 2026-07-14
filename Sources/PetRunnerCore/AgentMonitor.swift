@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 public enum AgentProvider: String, CaseIterable, Codable, Sendable {
@@ -25,6 +24,16 @@ public enum AgentStatus: String, CaseIterable, Codable, Sendable {
         case .needsApproval: "Needs approval"
         case .finished: "Finished"
         case .failed: "Failed"
+        }
+    }
+
+    public var detailText: String {
+        switch self {
+        case .working: "WORKING ON TASK"
+        case .reviewing: "REVIEWING CHANGES"
+        case .needsApproval: "WAITING FOR YOU"
+        case .finished: "TURN COMPLETE"
+        case .failed: "TURN FAILED"
         }
     }
 
@@ -67,77 +76,60 @@ public struct AgentSessionKey: Hashable, Codable, Sendable {
     }
 }
 
-public enum AgentSessionLabel {
-    public static func labels(for keys: [AgentSessionKey]) -> [AgentSessionKey: String] {
-        labels(for: keys, fingerprint: fingerprint(for:))
+public enum AgentSessionDisplayNameSource: Int, Codable, Sendable, Comparable {
+    case prompt
+    case nativeProvider
+
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+public struct AgentSessionDisplayName: Codable, Equatable, Sendable {
+    public static let maximumCharacterCount = 96
+    public static let maximumUTF8ByteCount = 384
+
+    public let value: String
+    public let source: AgentSessionDisplayNameSource
+
+    public static func sanitized(_ rawValue: String, source: AgentSessionDisplayNameSource) -> Self? {
+        let collapsed = rawValue
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+        guard !collapsed.isEmpty else { return nil }
+
+        var result = ""
+        var byteCount = 0
+        for character in collapsed {
+            guard result.count < maximumCharacterCount else { break }
+            let characterValue = String(character)
+            let characterBytes = characterValue.lengthOfBytes(using: .utf8)
+            guard byteCount + characterBytes <= maximumUTF8ByteCount else { break }
+            result.append(character)
+            byteCount += characterBytes
+        }
+        guard !result.isEmpty else { return nil }
+        return Self(value: result, source: source)
     }
 
-    static func labels(
-        for keys: [AgentSessionKey],
-        fingerprint: (AgentSessionKey) -> String
-    ) -> [AgentSessionKey: String] {
-        let uniqueKeys = keys.reduce(into: [AgentSessionKey]()) { result, key in
-            if !result.contains(key) { result.append(key) }
-        }
-        let fingerprints = Dictionary(uniqueKeys.map { key in
-            (key, fingerprint(key).uppercased())
-        }, uniquingKeysWith: { first, _ in first })
-        var lengths = Dictionary(uniqueKeys.map { key in
-            (key, min(6, fingerprints[key]?.count ?? 0))
-        }, uniquingKeysWith: { first, _ in first })
-
-        while true {
-            let groups = Dictionary(grouping: uniqueKeys) { key in
-                let value = fingerprints[key] ?? ""
-                let length = lengths[key] ?? 0
-                return String(value.prefix(length))
-            }
-            let collisions = groups.values.filter { $0.count > 1 }
-            guard !collisions.isEmpty else { break }
-
-            var extended = false
-            for collision in collisions {
-                for key in collision {
-                    let maximum = fingerprints[key]?.count ?? 0
-                    let current = lengths[key] ?? 0
-                    if current < maximum {
-                        lengths[key] = min(current + 2, maximum)
-                        extended = true
-                    }
-                }
-            }
-            guard extended else { break }
-        }
-
-        let finalGroups = Dictionary(grouping: uniqueKeys) { key in
-            let value = fingerprints[key] ?? ""
-            let length = lengths[key] ?? 0
-            return String(value.prefix(length))
-        }
-        var result: [AgentSessionKey: String] = [:]
-        for (prefix, group) in finalGroups {
-            if group.count == 1, let key = group.first {
-                result[key] = "SESSION \(prefix)"
-            } else {
-                for (index, key) in group.sorted(by: sessionKeySort).enumerated() {
-                    result[key] = "SESSION \(prefix) \(index + 1)"
-                }
-            }
-        }
-        return result
+    private init(value: String, source: AgentSessionDisplayNameSource) {
+        self.value = value
+        self.source = source
     }
 
-    private static func fingerprint(for key: AgentSessionKey) -> String {
-        let value = sessionKeyValue(key)
-        return SHA256.hash(data: Data(value.utf8)).map { String(format: "%02X", $0) }.joined()
+    private enum CodingKeys: String, CodingKey {
+        case value
+        case source
     }
 
-    private static func sessionKeySort(_ lhs: AgentSessionKey, _ rhs: AgentSessionKey) -> Bool {
-        sessionKeyValue(lhs) < sessionKeyValue(rhs)
-    }
-
-    private static func sessionKeyValue(_ key: AgentSessionKey) -> String {
-        "\(key.provider.rawValue)\u{1F}\(key.sessionID)"
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let value = try container.decode(String.self, forKey: .value)
+        let source = try container.decode(AgentSessionDisplayNameSource.self, forKey: .source)
+        guard let sanitized = Self.sanitized(value, source: source) else {
+            throw DecodingError.dataCorruptedError(forKey: .value, in: container, debugDescription: "Display name is empty")
+        }
+        self = sanitized
     }
 }
 
@@ -145,11 +137,18 @@ public struct NormalizedAgentEvent: Equatable, Sendable {
     public let provider: AgentProvider
     public let sessionID: String
     public let status: AgentStatus
+    public let displayName: AgentSessionDisplayName?
 
-    public init(provider: AgentProvider, sessionID: String, status: AgentStatus) {
+    public init(
+        provider: AgentProvider,
+        sessionID: String,
+        status: AgentStatus,
+        displayName: AgentSessionDisplayName? = nil
+    ) {
         self.provider = provider
         self.sessionID = sessionID
         self.status = status
+        self.displayName = displayName
     }
 
     public var key: AgentSessionKey {
@@ -160,15 +159,18 @@ public struct NormalizedAgentEvent: Equatable, Sendable {
 public struct AgentSessionSnapshot: Equatable, Sendable {
     public let key: AgentSessionKey
     public let status: AgentStatus
+    public let displayName: AgentSessionDisplayName?
 
-    public init(key: AgentSessionKey, status: AgentStatus) {
+    public init(key: AgentSessionKey, status: AgentStatus, displayName: AgentSessionDisplayName? = nil) {
         self.key = key
         self.status = status
+        self.displayName = displayName
     }
 
     public var provider: AgentProvider { key.provider }
     public var sessionID: String { key.sessionID }
     public var displayText: String { status.displayText }
+    public var detailText: String { displayName?.value ?? status.detailText }
     public var animation: AnimationState { status.animation }
     public var indicatorTone: AgentStatusTone { status.indicatorTone }
 }
@@ -187,13 +189,26 @@ public struct AgentSessionStore: Sendable {
     }
 
     public mutating func upsert(_ event: NormalizedAgentEvent) {
-        let snapshot = AgentSessionSnapshot(key: event.key, status: event.status)
+        let existing = entries.first { $0.key == event.key }
+        let displayName = preferredDisplayName(existing: existing?.displayName, candidate: event.displayName)
+        let snapshot = AgentSessionSnapshot(key: event.key, status: event.status, displayName: displayName)
         entries.removeAll { $0.key == event.key }
         entries.insert(snapshot, at: 0)
         if entries.count > Self.maximumEntries {
             entries.removeLast(entries.count - Self.maximumEntries)
         }
         selectedIndex = 0
+    }
+
+    @discardableResult
+    public mutating func setDisplayName(_ displayName: AgentSessionDisplayName, for key: AgentSessionKey) -> Bool {
+        guard let index = entries.firstIndex(where: { $0.key == key }) else { return false }
+        let existing = entries[index]
+        guard let preferred = preferredDisplayName(existing: existing.displayName, candidate: displayName), preferred != existing.displayName else {
+            return false
+        }
+        entries[index] = AgentSessionSnapshot(key: existing.key, status: existing.status, displayName: preferred)
+        return true
     }
 
     public mutating func selectPrevious() {
@@ -229,5 +244,16 @@ public struct AgentSessionStore: Sendable {
             selectedIndex = min(selectedIndex, max(0, entries.count - 1))
         }
         return true
+    }
+
+    private func preferredDisplayName(
+        existing: AgentSessionDisplayName?,
+        candidate: AgentSessionDisplayName?
+    ) -> AgentSessionDisplayName? {
+        guard let candidate else { return existing }
+        guard let existing else { return candidate }
+        if candidate.source > existing.source { return candidate }
+        if candidate.source == .nativeProvider, candidate.value != existing.value { return candidate }
+        return existing
     }
 }

@@ -32,16 +32,20 @@ npx pet-runner uninstall
 
 ## Optional agent monitor (macOS)
 
-Choose **Enable Agent Monitor** in the menu bar to explicitly select any
+Choose **Agent Monitor → Enable Agent Monitor** in the menu bar to explicitly select any
 detected Claude Code, Codex, or Cursor providers. It starts off by default and
-shows one current card with a provider, an anonymized `SESSION` label, and one
-fixed generic state: `Working…`, `Reviewing…`, `Needs approval`, `Finished`, or
-`Failed`. Its attached pixel rail shows up to five active sessions in MRU order;
-choose a color cell to switch the card. The card can collapse into a tight
-vertical list of those color cells, and choosing one reopens its session. No raw
-session ID, task title, prompt, command, filename, or transcript content is
-shown or sent to an LLM, so the feature adds no model-token usage—only small
-local hook and IPC overhead.
+shows the provider, a two-line session name, and a small fixed state:
+`Working…`, `Reviewing…`, `Needs approval`, `Finished`, or `Failed`. The name is
+the first submitted prompt shortened in memory for Claude/Codex; Cursor first
+uses that fallback, then replaces it with Cursor's local conversation title
+when available. PetRunner never persists the name, and clears it when the app
+quits or the session expires.
+
+The attached rail shows up to five active sessions in MRU order. Use the large
+up/down buttons to browse and the highlighted color cell as an overview; the
+compact rail has a `+` button to reopen the card. Raw session IDs, commands,
+filenames, and transcript contents are not shown or sent to an LLM, so the
+feature adds no model-token usage—only small local hook and IPC overhead.
 
 Disable monitoring before deleting a manually installed app in Finder. The npm
 uninstall command runs monitor-hook cleanup automatically.

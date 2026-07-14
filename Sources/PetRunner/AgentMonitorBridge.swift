@@ -103,7 +103,13 @@ enum AgentMonitorHookRunner {
               let descriptor = try? JSONDecoder().decode(AgentMonitorRuntimeDescriptor.self, from: descriptorData)
         else { return 0 }
 
-        let envelope = AgentMonitorEnvelope(token: descriptor.token, provider: normalized.provider, sessionID: normalized.sessionID, status: normalized.status)
+        let envelope = AgentMonitorEnvelope(
+            token: descriptor.token,
+            provider: normalized.provider,
+            sessionID: normalized.sessionID,
+            status: normalized.status,
+            displayName: normalized.displayName
+        )
         guard let data = try? JSONEncoder().encode(envelope), let port = NWEndpoint.Port(rawValue: descriptor.port) else { return 0 }
         var length = UInt32(data.count).bigEndian
         let header = Data(bytes: &length, count: MemoryLayout<UInt32>.size)

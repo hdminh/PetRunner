@@ -3,52 +3,18 @@ import PetRunnerCore
 
 @MainActor
 final class StackedBubbleBackgroundView: NSView {
-    static let expandedContentSize = CGSize(width: 264, height: 94)
-
-    private static let cardFrame = CGRect(x: 0, y: 0, width: 248, height: 94)
-    private static let railFrame = CGRect(x: 246, y: 0, width: 18, height: 94)
-    private static let headerHeight: CGFloat = 22
-    private static let statusCellSize = CGSize(width: 12, height: 12)
-    private static let compactCellSize = CGSize(width: 16, height: 14)
-    private static let statusCellStep: CGFloat = 16
-
     var sessionCount = 0 { didSet { needsDisplay = true } }
     var selectedIndex = 0 { didSet { needsDisplay = true } }
     var providerLabel = "" { didSet { needsDisplay = true } }
-    var sessionLabel = "" { didSet { needsDisplay = true } }
+    var sessionPosition = "" { didSet { needsDisplay = true } }
     var statusLabel = "" { didSet { needsDisplay = true } }
     var indicatorTones: [AgentStatusTone] = [] { didSet { needsDisplay = true } }
     var isCollapsed = false { didSet { needsDisplay = true } }
+    var canSelectPrevious = false { didSet { needsDisplay = true } }
+    var canSelectNext = false { didSet { needsDisplay = true } }
 
-    static func contentSize(isCollapsed: Bool, sessionCount: Int) -> CGSize {
-        guard isCollapsed else { return expandedContentSize }
-        let visibleCount = min(max(sessionCount, 1), AgentSessionStore.maximumEntries)
-        return CGSize(width: compactCellSize.width, height: compactCellSize.height * CGFloat(visibleCount))
-    }
-
-    static func statusControlFrame(at index: Int, sessionCount: Int, isCollapsed: Bool) -> CGRect {
-        let visibleCount = min(max(sessionCount, 0), AgentSessionStore.maximumEntries)
-        guard (0..<visibleCount).contains(index) else { return .zero }
-
-        if isCollapsed {
-            return CGRect(
-                x: 0,
-                y: CGFloat(visibleCount - index - 1) * compactCellSize.height,
-                width: compactCellSize.width,
-                height: compactCellSize.height
-            )
-        }
-
-        return CGRect(
-            x: railFrame.minX + 3,
-            y: railFrame.maxY - 14 - CGFloat(index) * statusCellStep,
-            width: statusCellSize.width,
-            height: statusCellSize.height
-        )
-    }
-
-    static var toggleControlFrame: CGRect {
-        CGRect(x: 224, y: 75, width: 18, height: 16)
+    private var layout: SessionBubbleLayout {
+        SessionBubbleLayout(sessionCount: sessionCount, isCollapsed: isCollapsed)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -60,48 +26,67 @@ final class StackedBubbleBackgroundView: NSView {
     }
 
     private func drawExpandedBubble() {
-        drawPixelFrame(Self.cardFrame, fill: NSColor(white: 0.84, alpha: 1))
+        let layout = layout
+        drawPixelFrame(layout.cardFrame, fill: NSColor(white: 0.84, alpha: 1))
 
-        let header = CGRect(
-            x: Self.cardFrame.minX + 2,
-            y: Self.cardFrame.maxY - Self.headerHeight,
-            width: Self.cardFrame.width - 4,
-            height: Self.headerHeight - 2
-        )
         NSColor(white: 0.72, alpha: 1).setFill()
-        NSBezierPath(rect: header).fill()
+        NSBezierPath(rect: layout.headerFrame).fill()
         NSColor.black.setFill()
-        NSBezierPath(rect: CGRect(x: Self.cardFrame.minX + 2, y: header.minY - 2, width: Self.cardFrame.width - 4, height: 2)).fill()
+        NSBezierPath(rect: CGRect(x: 2, y: layout.headerFrame.minY - 2, width: layout.headerFrame.width, height: 2)).fill()
 
-        drawPixelText(providerLabel, at: CGPoint(x: 8, y: 87), scale: 1)
-        drawPixelButton(in: Self.toggleControlFrame)
-        drawPixelText("-", at: CGPoint(x: 230, y: 85), scale: 1)
+        drawPixelText(providerLabel, at: CGPoint(x: 8, y: 103), scale: 1)
+        drawPixelText(sessionPosition, at: CGPoint(x: 164, y: 103), scale: 1)
+        drawPixelButton(in: layout.collapseControlFrame, enabled: true)
+        drawPixelText("-", at: CGPoint(x: 201, y: 102), scale: 1)
 
-        drawPixelText(sessionLabel, at: CGPoint(x: 10, y: 60), scale: 1)
-        drawPixelText(statusLabel.replacingOccurrences(of: "…", with: "..."), at: CGPoint(x: 10, y: 42), scale: 2)
+        drawPixelText(statusLabel.replacingOccurrences(of: "…", with: "..."), at: CGPoint(x: 10, y: 28), scale: 1)
 
-        drawPixelFrame(Self.railFrame, fill: NSColor(white: 0.67, alpha: 1))
-        for index in 0..<visibleCount {
-            drawStatusLight(
-                in: Self.statusControlFrame(at: index, sessionCount: sessionCount, isCollapsed: false),
-                tone: tone(at: index),
-                selected: index == selectedIndex
-            )
-        }
+        drawPixelFrame(layout.railFrame, fill: NSColor(white: 0.67, alpha: 1))
+        drawPixelButton(in: layout.previousControlFrame, enabled: canSelectPrevious)
+        drawChevron(in: layout.previousControlFrame, pointingUp: true, enabled: canSelectPrevious)
+        drawPixelButton(in: layout.nextControlFrame, enabled: canSelectNext)
+        drawChevron(in: layout.nextControlFrame, pointingUp: false, enabled: canSelectNext)
+        drawIndicators(using: layout)
     }
 
     private func drawCollapsedRail() {
-        for index in 0..<visibleCount {
+        let layout = layout
+        drawPixelButton(in: layout.expandControlFrame, enabled: true)
+        drawExpandArrows(in: layout.expandControlFrame)
+        drawIndicators(using: layout)
+    }
+
+    private func drawExpandArrows(in rect: CGRect) {
+        let inset: CGFloat = 4
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let upperRight = CGPoint(x: rect.maxX - inset, y: rect.maxY - inset)
+        let lowerLeft = CGPoint(x: rect.minX + inset, y: rect.minY + inset)
+
+        let arrows = NSBezierPath()
+        arrows.lineWidth = 2
+        arrows.lineCapStyle = .square
+        arrows.move(to: center)
+        arrows.line(to: upperRight)
+        arrows.line(to: CGPoint(x: upperRight.x - 4, y: upperRight.y))
+        arrows.move(to: upperRight)
+        arrows.line(to: CGPoint(x: upperRight.x, y: upperRight.y - 4))
+        arrows.move(to: center)
+        arrows.line(to: lowerLeft)
+        arrows.line(to: CGPoint(x: lowerLeft.x + 4, y: lowerLeft.y))
+        arrows.move(to: lowerLeft)
+        arrows.line(to: CGPoint(x: lowerLeft.x, y: lowerLeft.y + 4))
+        NSColor.black.setStroke()
+        arrows.stroke()
+    }
+
+    private func drawIndicators(using layout: SessionBubbleLayout) {
+        for index in 0..<sessionCount {
             drawStatusLight(
-                in: Self.statusControlFrame(at: index, sessionCount: sessionCount, isCollapsed: true),
+                in: layout.indicatorFrame(at: index),
                 tone: tone(at: index),
                 selected: index == selectedIndex
             )
         }
-    }
-
-    private var visibleCount: Int {
-        min(max(sessionCount, 0), AgentSessionStore.maximumEntries)
     }
 
     private func tone(at index: Int) -> AgentStatusTone {
@@ -115,18 +100,31 @@ final class StackedBubbleBackgroundView: NSView {
         NSBezierPath(rect: rect.insetBy(dx: 2, dy: 2)).fill()
     }
 
-    private func drawPixelButton(in rect: CGRect) {
-        NSColor.black.setFill()
+    private func drawPixelButton(in rect: CGRect, enabled: Bool) {
+        (enabled ? NSColor.black : NSColor(white: 0.38, alpha: 1)).setFill()
         NSBezierPath(rect: rect).fill()
-        NSColor(white: 0.82, alpha: 1).setFill()
+        (enabled ? NSColor(white: 0.82, alpha: 1) : NSColor(white: 0.65, alpha: 1)).setFill()
         NSBezierPath(rect: rect.insetBy(dx: 2, dy: 2)).fill()
+    }
+
+    private func drawChevron(in rect: CGRect, pointingUp: Bool, enabled: Bool) {
+        let color = enabled ? NSColor.black : NSColor(white: 0.42, alpha: 1)
+        let centerX = rect.midX
+        let centerY = rect.midY
+        let rows: [(CGFloat, CGFloat)] = pointingUp
+            ? [(0, 0), (1, 2), (2, 3)]
+            : [(0, 3), (1, 2), (2, 0)]
+        color.setFill()
+        for (row, inset) in rows {
+            NSBezierPath(rect: CGRect(x: centerX - 4 + inset, y: centerY - 3 + row * 3, width: 8 - inset * 2, height: 2)).fill()
+        }
     }
 
     private func drawStatusLight(in rect: CGRect, tone: AgentStatusTone, selected: Bool) {
         (selected ? NSColor.black : NSColor(white: 0.32, alpha: 1)).setFill()
         NSBezierPath(rect: rect).fill()
         color(for: tone).setFill()
-        NSBezierPath(rect: rect.insetBy(dx: 2, dy: 2)).fill()
+        NSBezierPath(rect: rect.insetBy(dx: selected ? 2 : 1, dy: selected ? 2 : 1)).fill()
     }
 
     private func color(for tone: AgentStatusTone) -> NSColor {

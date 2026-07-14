@@ -4,21 +4,22 @@ import PetRunnerCore
 @MainActor
 final class SessionBubblePanelController {
     private let background = StackedBubbleBackgroundView()
-    private let toggleCollapsed = NSButton(title: "", target: nil, action: nil)
-    private let statusButtons = (0..<AgentSessionStore.maximumEntries).map { _ in
-        NSButton(title: "", target: nil, action: nil)
-    }
+    private let collapseButton = NSButton(title: "", target: nil, action: nil)
+    private let previousButton = NSButton(title: "", target: nil, action: nil)
+    private let nextButton = NSButton(title: "", target: nil, action: nil)
+    private let expandButton = NSButton(title: "", target: nil, action: nil)
+    private let titleLabel = NSTextField(labelWithString: "")
     private let contentView = NSView()
     private let panel: NSPanel
-    private var isCollapsed = false
 
-    /// The second argument is true when choosing a compact status cell should reopen the bubble.
-    var onSelectSession: ((Int, Bool) -> Void)?
-    var onToggleCollapsed: (() -> Void)?
+    var onSelectPrevious: (() -> Void)?
+    var onSelectNext: (() -> Void)?
+    var onCollapse: (() -> Void)?
+    var onExpand: (() -> Void)?
 
     init() {
         panel = NSPanel(
-            contentRect: CGRect(origin: .zero, size: StackedBubbleBackgroundView.expandedContentSize),
+            contentRect: CGRect(origin: .zero, size: SessionBubbleLayout.expandedContentSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -32,18 +33,32 @@ final class SessionBubblePanelController {
         background.frame = contentView.bounds
         contentView.addSubview(background)
 
-        configure(toggleCollapsed)
-        toggleCollapsed.toolTip = "Minimize session status"
-        toggleCollapsed.setAccessibilityLabel("Minimize session status")
-        toggleCollapsed.action = #selector(togglePresentation)
-        contentView.addSubview(toggleCollapsed)
+        titleLabel.font = .monospacedSystemFont(ofSize: 12, weight: .semibold)
+        titleLabel.textColor = .black
+        titleLabel.maximumNumberOfLines = 2
+        titleLabel.lineBreakMode = .byWordWrapping
+        titleLabel.isSelectable = false
+        contentView.addSubview(titleLabel)
 
-        for (index, button) in statusButtons.enumerated() {
-            configure(button)
-            button.tag = index
-            button.action = #selector(selectSession)
-            contentView.addSubview(button)
-        }
+        configure(collapseButton, action: #selector(collapse))
+        collapseButton.toolTip = "Minimize session monitor"
+        collapseButton.setAccessibilityLabel("Minimize session monitor")
+        contentView.addSubview(collapseButton)
+
+        configure(previousButton, action: #selector(selectPrevious))
+        previousButton.toolTip = "Show newer session"
+        previousButton.setAccessibilityLabel("Show newer session")
+        contentView.addSubview(previousButton)
+
+        configure(nextButton, action: #selector(selectNext))
+        nextButton.toolTip = "Show older session"
+        nextButton.setAccessibilityLabel("Show older session")
+        contentView.addSubview(nextButton)
+
+        configure(expandButton, action: #selector(expand))
+        expandButton.toolTip = "Expand session monitor"
+        expandButton.setAccessibilityLabel("Expand session monitor")
+        contentView.addSubview(expandButton)
 
         panel.contentView = contentView
     }
@@ -55,33 +70,39 @@ final class SessionBubblePanelController {
         isCollapsed: Bool = false
     ) {
         guard entries.indices.contains(selectedIndex) else { hide(); return }
-        self.isCollapsed = isCollapsed
         let entry = entries[selectedIndex]
-        let contentSize = StackedBubbleBackgroundView.contentSize(isCollapsed: isCollapsed, sessionCount: entries.count)
+        let layout = SessionBubbleLayout(sessionCount: entries.count, isCollapsed: isCollapsed)
+        let contentSize = layout.contentSize
         panel.setContentSize(contentSize)
         contentView.frame = CGRect(origin: .zero, size: contentSize)
         background.frame = contentView.bounds
 
-        let sessionLabels = AgentSessionLabel.labels(for: entries.map(\.key))
-        let selectedSessionLabel = sessionLabels[entry.key] ?? "SESSION"
         background.sessionCount = entries.count
         background.selectedIndex = selectedIndex
         background.providerLabel = entry.provider.displayLabel
-        background.sessionLabel = selectedSessionLabel
+        background.sessionPosition = "\(selectedIndex + 1)/\(entries.count)"
         background.statusLabel = entry.displayText
         background.indicatorTones = entries.map(\.indicatorTone)
         background.isCollapsed = isCollapsed
+        background.canSelectPrevious = selectedIndex > 0
+        background.canSelectNext = selectedIndex < entries.count - 1
 
-        toggleCollapsed.frame = StackedBubbleBackgroundView.toggleControlFrame
-        toggleCollapsed.isHidden = isCollapsed
-        updateStatusButtons(entries: entries, sessionLabels: sessionLabels, isCollapsed: isCollapsed)
-        background.setAccessibilityLabel(accessibilityLabel(
-            for: entry,
-            sessionLabel: selectedSessionLabel,
-            selectedIndex: selectedIndex,
-            entryCount: entries.count,
-            isCollapsed: isCollapsed
-        ))
+        titleLabel.frame = layout.titleFrame
+        titleLabel.stringValue = entry.detailText
+        titleLabel.isHidden = isCollapsed
+
+        collapseButton.frame = layout.collapseControlFrame
+        collapseButton.isHidden = isCollapsed
+        previousButton.frame = layout.previousControlFrame
+        previousButton.isHidden = isCollapsed
+        previousButton.isEnabled = selectedIndex > 0
+        nextButton.frame = layout.nextControlFrame
+        nextButton.isHidden = isCollapsed
+        nextButton.isEnabled = selectedIndex < entries.count - 1
+        expandButton.frame = layout.expandControlFrame
+        expandButton.isHidden = !isCollapsed
+        expandButton.setAccessibilityLabel("Expand session monitor with \(entries.count) active sessions")
+        background.setAccessibilityLabel(accessibilityLabel(for: entry, selectedIndex: selectedIndex, entryCount: entries.count, isCollapsed: isCollapsed))
 
         let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(petFrame) }) ?? NSScreen.main
         let visible = screen?.visibleFrame ?? petFrame.insetBy(dx: -contentSize.width, dy: -contentSize.height)
@@ -96,54 +117,29 @@ final class SessionBubblePanelController {
 
     func hide() { panel.orderOut(nil) }
 
-    @objc private func selectSession(_ sender: NSButton) {
-        onSelectSession?(sender.tag, isCollapsed)
-    }
+    @objc private func selectPrevious() { onSelectPrevious?() }
+    @objc private func selectNext() { onSelectNext?() }
+    @objc private func collapse() { onCollapse?() }
+    @objc private func expand() { onExpand?() }
 
-    @objc private func togglePresentation() { onToggleCollapsed?() }
-
-    private func configure(_ button: NSButton) {
+    private func configure(_ button: NSButton, action: Selector) {
         button.title = ""
         button.isBordered = false
         button.isTransparent = true
         button.focusRingType = .none
         button.target = self
-    }
-
-    private func updateStatusButtons(
-        entries: [AgentSessionSnapshot],
-        sessionLabels: [AgentSessionKey: String],
-        isCollapsed: Bool
-    ) {
-        for (index, button) in statusButtons.enumerated() {
-            let isVisible = entries.indices.contains(index)
-            button.isHidden = !isVisible
-            guard isVisible else { continue }
-
-            let entry = entries[index]
-            let sessionLabel = sessionLabels[entry.key] ?? "SESSION"
-            button.frame = StackedBubbleBackgroundView.statusControlFrame(
-                at: index,
-                sessionCount: entries.count,
-                isCollapsed: isCollapsed
-            )
-            let action = isCollapsed ? "Open" : "Show"
-            let label = "\(action) \(entry.provider.displayLabel) \(sessionLabel), \(entry.displayText)"
-            button.toolTip = label
-            button.setAccessibilityLabel(label)
-        }
+        button.action = action
     }
 
     private func accessibilityLabel(
         for entry: AgentSessionSnapshot,
-        sessionLabel: String,
         selectedIndex: Int,
         entryCount: Int,
         isCollapsed: Bool
     ) -> String {
         if isCollapsed {
-            return "Collapsed session status list. \(entryCount) active sessions. Select a status cell to open that session."
+            return "Collapsed session monitor. \(entryCount) active sessions. Expand to browse sessions."
         }
-        return "Expanded session bubble. \(entry.provider.displayLabel), \(sessionLabel), \(entry.displayText), session \(selectedIndex + 1) of \(entryCount). Select a status cell to show another active session."
+        return "Expanded session monitor. \(entry.provider.displayLabel), \(entry.detailText), \(entry.displayText), session \(selectedIndex + 1) of \(entryCount)."
     }
 }

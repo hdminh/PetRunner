@@ -28,11 +28,11 @@ final class MonitorSetupWindowController: NSObject, NSWindowDelegate {
         self.completion = completion
 
         let content = NSView(frame: panel.contentView!.bounds)
-        let explanation = NSTextField(wrappingLabelWithString: "Select providers to install local, generic-status hooks. Nothing is selected by default.")
-        explanation.frame = CGRect(x: 20, y: 184, width: 320, height: 42)
+        let explanation = NSTextField(wrappingLabelWithString: "Select providers to install local monitor hooks. PetRunner keeps a shortened first prompt as the session name only while it runs; Cursor may replace it with its local title. Nothing is selected by default.")
+        explanation.frame = CGRect(x: 20, y: 166, width: 320, height: 60)
         content.addSubview(explanation)
 
-        let stack = NSStackView(frame: CGRect(x: 20, y: 75, width: 320, height: 96))
+        let stack = NSStackView(frame: CGRect(x: 20, y: 65, width: 320, height: 92))
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8

@@ -19,7 +19,7 @@ struct ProviderDetectionTests {
     }
 
     @Test func glyphTableCoversSessionLabelsAndPixelControls() {
-        for character in "SESSION 0123456789ABCDEF+-/" where character != " " {
+        for character in "SESSION 0123456789ABCDEF-/" where character != " " {
             #expect(PixelGlyphs.rows[character] != nil)
         }
     }

@@ -4,6 +4,8 @@ public enum ProviderHookError: Error, Equatable, Sendable {
     case malformedJSON
     case unsupportedRoot
     case unsupportedHookShape
+    case unsupportedCursorVersion
+    case missingInstalledHook
 }
 
 public struct ProviderHookConfiguration: Sendable {
@@ -25,9 +27,12 @@ public struct ProviderHookConfiguration: Sendable {
 
     public var events: [String] {
         switch provider {
-        case .claude: ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUseFailure", "Stop", "StopFailure"]
-        case .codex: ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUseFailure", "Stop", "StopFailure"]
-        case .cursor: ["sessionStart", "beforeSubmitPrompt", "preToolUse", "postToolUseFailure", "stop", "sessionEnd"]
+        case .claude:
+            ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "PostToolUseFailure", "Stop", "StopFailure"]
+        case .codex:
+            ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop"]
+        case .cursor:
+            ["sessionStart", "beforeSubmitPrompt", "preToolUse", "postToolUse", "postToolUseFailure", "stop", "sessionEnd"]
         }
     }
 
@@ -39,39 +44,42 @@ public struct ProviderHookConfiguration: Sendable {
 
     public func install(into data: Data, executablePath: String) throws -> Data {
         var root = try rootObject(from: data)
-        var hooks = root["hooks"] as? [String: Any] ?? [:]
-        guard root["hooks"] == nil || root["hooks"] is [String: Any] else { throw ProviderHookError.unsupportedHookShape }
+        try validateProviderRoot(root)
+        var hooks = try hooks(from: root)
+        try removeOwnedEntries(from: &hooks)
 
         for event in events {
-            let updated = try updating(entries: hooks[event], event: event, executablePath: executablePath)
-            hooks[event] = updated
+            hooks[event] = try updating(entries: hooks[event], event: event, executablePath: executablePath)
         }
         root["hooks"] = hooks
+        if provider == .cursor { root["version"] = 1 }
         return try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys, .prettyPrinted])
     }
 
     public func remove(from data: Data) throws -> Data {
         var root = try rootObject(from: data)
-        guard var hooks = root["hooks"] as? [String: Any] else { return data }
-
-        for event in Array(hooks.keys) {
-            guard let value = hooks[event] else { continue }
-            guard var entries = value as? [[String: Any]] else { throw ProviderHookError.unsupportedHookShape }
-            entries = entries.compactMap { entry in
-                isOwned(entry) ? nil : entry
-            }
-            if entries.isEmpty {
-                hooks.removeValue(forKey: event)
-            } else {
-                hooks[event] = entries
-            }
-        }
+        try validateProviderRoot(root)
+        var hooks = try hooks(from: root)
+        try removeOwnedEntries(from: &hooks)
         if hooks.isEmpty {
             root.removeValue(forKey: "hooks")
         } else {
             root["hooks"] = hooks
         }
         return try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys, .prettyPrinted])
+    }
+
+    public func verifyInstalled(in data: Data, executablePath: String) throws {
+        let root = try rootObject(from: data)
+        try validateProviderRoot(root)
+        let hooks = try hooks(from: root)
+        for event in events {
+            guard let entries = hooks[event] as? [[String: Any]] else { throw ProviderHookError.missingInstalledHook }
+            let expectedCommand = command(executablePath: executablePath, event: event)
+            guard entries.contains(where: { contains(command: expectedCommand, in: $0) }) else {
+                throw ProviderHookError.missingInstalledHook
+            }
+        }
     }
 
     public func normalize(payload: [String: Any], eventName: String) -> NormalizedAgentEvent? {
@@ -85,7 +93,15 @@ public struct ProviderHookConfiguration: Sendable {
             status = isReadOnlyTool(payload["tool_name"] as? String ?? payload["toolName"] as? String) ? .reviewing : .working
         } else if loweredEvent.contains("prompt") || loweredEvent.contains("sessionstart") { status = .working }
         else { status = nil }
-        return status.map { NormalizedAgentEvent(provider: provider, sessionID: sessionID, status: $0) }
+
+        return status.map {
+            NormalizedAgentEvent(
+                provider: provider,
+                sessionID: sessionID,
+                status: $0,
+                displayName: displayNameCandidate(in: payload, eventName: loweredEvent)
+            )
+        }
     }
 
     private func rootObject(from data: Data) throws -> [String: Any] {
@@ -97,11 +113,61 @@ public struct ProviderHookConfiguration: Sendable {
         return root
     }
 
+    private func validateProviderRoot(_ root: [String: Any]) throws {
+        guard provider == .cursor else { return }
+        guard let rawVersion = root["version"] else { return }
+        guard let version = rawVersion as? NSNumber,
+              CFGetTypeID(version) != CFBooleanGetTypeID(),
+              version.doubleValue == 1
+        else { throw ProviderHookError.unsupportedCursorVersion }
+    }
+
+    private func hooks(from root: [String: Any]) throws -> [String: Any] {
+        guard let hooks = root["hooks"] else { return [:] }
+        guard let typed = hooks as? [String: Any] else { throw ProviderHookError.unsupportedHookShape }
+        for value in typed.values where !(value is [[String: Any]]) {
+            throw ProviderHookError.unsupportedHookShape
+        }
+        return typed
+    }
+
+    private func removeOwnedEntries(from hooks: inout [String: Any]) throws {
+        for event in Array(hooks.keys) {
+            guard let entries = hooks[event] as? [[String: Any]] else { throw ProviderHookError.unsupportedHookShape }
+            let cleaned = try entries.compactMap(removeOwnedEntry)
+            if cleaned.isEmpty {
+                hooks.removeValue(forKey: event)
+            } else {
+                hooks[event] = cleaned
+            }
+        }
+    }
+
+    private func removeOwnedEntry(_ entry: [String: Any]) throws -> [String: Any]? {
+        if let command = entry["command"] {
+            guard let typedCommand = command as? String else { throw ProviderHookError.unsupportedHookShape }
+            return typedCommand.contains(Self.ownershipMarker) ? nil : entry
+        }
+        guard let rawNestedHooks = entry["hooks"] else { return entry }
+        guard let nestedHooks = rawNestedHooks as? [[String: Any]] else { throw ProviderHookError.unsupportedHookShape }
+        let cleanedNestedHooks = try nestedHooks.compactMap { nestedHook -> [String: Any]? in
+            if let command = nestedHook["command"] {
+                guard let typedCommand = command as? String else { throw ProviderHookError.unsupportedHookShape }
+                return typedCommand.contains(Self.ownershipMarker) ? nil : nestedHook
+            }
+            return nestedHook
+        }
+        guard !cleanedNestedHooks.isEmpty else { return nil }
+        var cleanedEntry = entry
+        cleanedEntry["hooks"] = cleanedNestedHooks
+        return cleanedEntry
+    }
+
     private func updating(entries: Any?, event: String, executablePath: String) throws -> [[String: Any]] {
         let existing: [[String: Any]]
         if let entries {
             guard let typed = entries as? [[String: Any]] else { throw ProviderHookError.unsupportedHookShape }
-            existing = typed.filter { !isOwned($0) }
+            existing = typed
         } else {
             existing = []
         }
@@ -112,10 +178,22 @@ public struct ProviderHookConfiguration: Sendable {
         return existing + [["command": command]]
     }
 
-    private func isOwned(_ entry: [String: Any]) -> Bool {
-        if (entry["command"] as? String)?.contains(Self.ownershipMarker) == true { return true }
-        let hooks = entry["hooks"] as? [[String: Any]] ?? []
-        return hooks.contains { ($0["command"] as? String)?.contains(Self.ownershipMarker) == true }
+    private func contains(command expectedCommand: String, in entry: [String: Any]) -> Bool {
+        if entry["command"] as? String == expectedCommand { return true }
+        let nestedHooks = entry["hooks"] as? [[String: Any]] ?? []
+        return nestedHooks.contains { $0["command"] as? String == expectedCommand }
+    }
+
+    private func displayNameCandidate(in payload: [String: Any], eventName: String) -> AgentSessionDisplayName? {
+        let isPromptEvent: Bool
+        switch provider {
+        case .claude, .codex:
+            isPromptEvent = eventName == "userpromptsubmit"
+        case .cursor:
+            isPromptEvent = eventName == "beforesubmitprompt"
+        }
+        guard isPromptEvent, let prompt = payload["prompt"] as? String else { return nil }
+        return AgentSessionDisplayName.sanitized(prompt, source: .prompt)
     }
 
     private func sessionID(in payload: [String: Any]) -> String? {

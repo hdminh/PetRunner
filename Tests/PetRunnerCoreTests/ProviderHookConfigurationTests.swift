@@ -53,6 +53,32 @@ struct ProviderHookConfigurationTests {
         let nested = try #require(entry["hooks"] as? [[String: Any]])
         #expect(nested.first?["type"] as? String == "command")
         #expect(command(in: entry)?.contains(ProviderHookConfiguration.ownershipMarker) == true)
+        #expect(hooks["PostToolUseFailure"] == nil)
+        #expect(hooks["StopFailure"] == nil)
+    }
+
+    @Test func cursorAddsVersionOneAndUsesDocumentedEvents() throws {
+        let configuration = ProviderHookConfiguration(provider: .cursor)
+        let installed = try configuration.install(into: Data("{}".utf8), executablePath: "/tmp/pet")
+        let root = try json(installed)
+        let hooks = try #require(root["hooks"] as? [String: Any])
+
+        #expect(root["version"] as? Int == 1)
+        #expect(Set(hooks.keys) == Set(["sessionStart", "beforeSubmitPrompt", "preToolUse", "postToolUse", "postToolUseFailure", "stop", "sessionEnd"]))
+    }
+
+    @Test func installingPurgesStaleOwnedEventsWithoutRemovingThirdPartyHooks() throws {
+        let configuration = ProviderHookConfiguration(provider: .codex)
+        let stale = configuration.command(executablePath: "/tmp/old", event: "StopFailure")
+        let original = Data("{\"hooks\":{\"StopFailure\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"\(stale)\"}]}],\"Stop\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"other-command\"}]}]}}".utf8)
+
+        let installed = try configuration.install(into: original, executablePath: "/tmp/pet")
+        let root = try json(installed)
+        let hooks = try #require(root["hooks"] as? [String: Any])
+
+        #expect(hooks["StopFailure"] == nil)
+        let stopEntries = try #require(hooks["Stop"] as? [[String: Any]])
+        #expect(stopEntries.contains { command(in: $0) == "other-command" })
     }
 
     @Test func refusesMalformedAndUnsupportedRoots() {
@@ -76,7 +102,18 @@ struct ProviderHookConfigurationTests {
         ]
         let event = configuration.normalize(payload: payload, eventName: "preToolUse")
 
-        #expect(event == NormalizedAgentEvent(provider: .cursor, sessionID: "safe-session", status: .reviewing))
+        #expect(event == NormalizedAgentEvent(provider: .cursor, sessionID: "safe-session", status: .reviewing, displayName: nil))
+    }
+
+    @Test func capturesOnlyPromptEventsAsBoundedDisplayNames() {
+        let claude = ProviderHookConfiguration(provider: .claude)
+        let codex = ProviderHookConfiguration(provider: .codex)
+        let cursor = ProviderHookConfiguration(provider: .cursor)
+
+        #expect(claude.normalize(payload: ["session_id": "a", "prompt": "Claude title"], eventName: "UserPromptSubmit")?.displayName?.value == "Claude title")
+        #expect(codex.normalize(payload: ["session_id": "b", "prompt": "Codex title"], eventName: "UserPromptSubmit")?.displayName?.value == "Codex title")
+        #expect(cursor.normalize(payload: ["conversation_id": "c", "prompt": "Cursor title"], eventName: "beforeSubmitPrompt")?.displayName?.value == "Cursor title")
+        #expect(cursor.normalize(payload: ["conversation_id": "c", "prompt": "Do not use"], eventName: "preToolUse")?.displayName == nil)
     }
 
     @Test func mapsProviderEventsAndNeutralOutputRequirements() {

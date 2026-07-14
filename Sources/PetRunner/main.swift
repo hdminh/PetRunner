@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import PetRunnerCore
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 if arguments.contains("--agent-monitor-hook") {

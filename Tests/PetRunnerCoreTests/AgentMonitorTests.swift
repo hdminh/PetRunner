@@ -131,50 +131,51 @@ struct AgentMonitorTests {
     @Test func everyStatusUsesExistingAnimationAndFixedText() {
         #expect(AgentStatus.working.animation == .running)
         #expect(AgentStatus.working.displayText == "Working…")
+        #expect(AgentStatus.working.detailText == "WORKING ON TASK")
         #expect(AgentStatus.reviewing.animation == .review)
         #expect(AgentStatus.reviewing.displayText == "Reviewing…")
+        #expect(AgentStatus.reviewing.detailText == "REVIEWING CHANGES")
         #expect(AgentStatus.needsApproval.animation == .waiting)
+        #expect(AgentStatus.needsApproval.detailText == "WAITING FOR YOU")
         #expect(AgentStatus.finished.animation == .waving)
+        #expect(AgentStatus.finished.detailText == "TURN COMPLETE")
         #expect(AgentStatus.failed.animation == .failed)
+        #expect(AgentStatus.failed.detailText == "TURN FAILED")
     }
 
-    @Test func sessionLabelsAreStableAndNeverExposeRawSessionIDs() {
-        let key = AgentSessionKey(provider: .codex, sessionID: "secret-session-id")
+    @Test func displayNamesAreWhitespaceNormalizedAndBounded() {
+        let raw = "  Fix\n\t the   monitor   title  " + String(repeating: "x", count: 120)
+        let name = AgentSessionDisplayName.sanitized(raw, source: .prompt)
 
-        let first = AgentSessionLabel.labels(for: [key])[key]
-        let second = AgentSessionLabel.labels(for: [key])[key]
-
-        #expect(first == second)
-        #expect(first?.hasPrefix("SESSION ") == true)
-        #expect(first?.contains("secret-session-id") == false)
+        #expect(name?.value.hasPrefix("Fix the monitor title ") == true)
+        #expect(name?.value.count == 96)
+        #expect(name?.value.lengthOfBytes(using: .utf8) ?? 0 <= 384)
+        #expect(name?.source == .prompt)
     }
 
-    @Test func sessionLabelsExtendOnlyCollidingPrefixes() {
-        let first = AgentSessionKey(provider: .codex, sessionID: "first")
-        let second = AgentSessionKey(provider: .claude, sessionID: "second")
-        let third = AgentSessionKey(provider: .cursor, sessionID: "third")
-        let fingerprints = [
-            first: "ABCDEF123456",
-            second: "ABCDEF654321",
-            third: "987654321ABC",
-        ]
+    @Test func firstPromptTitlePersistsAcrossStatusUpdates() {
+        var store = AgentSessionStore()
+        let first = AgentSessionDisplayName.sanitized("Initial task", source: .prompt)!
+        let later = AgentSessionDisplayName.sanitized("Later task", source: .prompt)!
+        store.upsert(event(provider: .claude, id: "session", status: .working, displayName: first))
+        store.upsert(event(provider: .claude, id: "session", status: .reviewing, displayName: later))
 
-        let labels = AgentSessionLabel.labels(for: [first, second, third]) { fingerprints[$0]! }
-
-        #expect(labels[first] == "SESSION ABCDEF12")
-        #expect(labels[second] == "SESSION ABCDEF65")
-        #expect(labels[third] == "SESSION 987654")
+        #expect(store.selected?.displayName == first)
+        #expect(store.selected?.detailText == "Initial task")
     }
 
-    @Test func sessionLabelsStayStableWhenFullFingerprintsCollide() {
-        let first = AgentSessionKey(provider: .codex, sessionID: "first")
-        let second = AgentSessionKey(provider: .claude, sessionID: "second")
+    @Test func nativeProviderTitleOverridesPromptButPromptCannotOverrideIt() {
+        var store = AgentSessionStore()
+        let key = AgentSessionKey(provider: .cursor, sessionID: "conversation")
+        let prompt = AgentSessionDisplayName.sanitized("Prompt title", source: .prompt)!
+        let native = AgentSessionDisplayName.sanitized("Cursor title", source: .nativeProvider)!
+        store.upsert(event(provider: .cursor, id: "conversation", status: .working, displayName: prompt))
 
-        let firstOrder = AgentSessionLabel.labels(for: [first, second]) { _ in "ABCDEF" }
-        let secondOrder = AgentSessionLabel.labels(for: [second, first]) { _ in "ABCDEF" }
-
-        #expect(firstOrder[first] == secondOrder[first])
-        #expect(firstOrder[second] == secondOrder[second])
+        let didSetNative = store.setDisplayName(native, for: key)
+        let didReplaceNativeWithPrompt = store.setDisplayName(prompt, for: key)
+        #expect(didSetNative)
+        #expect(!didReplaceNativeWithPrompt)
+        #expect(store.selected?.displayName == native)
     }
 
     @Test func everyStatusHasAnAttentionTone() {
@@ -185,7 +186,12 @@ struct AgentMonitorTests {
         #expect(AgentStatus.failed.indicatorTone == .red)
     }
 
-    private func event(provider: AgentProvider, id: String, status: AgentStatus) -> NormalizedAgentEvent {
-        NormalizedAgentEvent(provider: provider, sessionID: id, status: status)
+    private func event(
+        provider: AgentProvider,
+        id: String,
+        status: AgentStatus,
+        displayName: AgentSessionDisplayName? = nil
+    ) -> NormalizedAgentEvent {
+        NormalizedAgentEvent(provider: provider, sessionID: id, status: status, displayName: displayName)
     }
 }
