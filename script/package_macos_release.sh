@@ -28,12 +28,13 @@ for ARCH in arm64 x86_64; do
 done
 
 rm -rf "$APP" "$DMG" "$DMG.sha256"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 lipo -create \
   "$BUILD_ROOT/arm64/arm64-apple-macosx/release/$APP_NAME" \
   "$BUILD_ROOT/x86_64/x86_64-apple-macosx/release/$APP_NAME" \
   -output "$APP/Contents/MacOS/$APP_NAME"
 cp "$INFO_PLIST" "$APP/Contents/Info.plist"
+cp "$ROOT_DIR/Assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 chmod +x "$APP/Contents/MacOS/$APP_NAME"
 
 codesign \

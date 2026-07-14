@@ -11,6 +11,7 @@ internal sealed class TrayController : IDisposable
     private readonly Action<double> changeSize;
     private readonly Action reload;
     private readonly Action quit;
+    private readonly Icon applicationIcon;
     private readonly NotifyIcon icon;
     private readonly Dictionary<string, Image> thumbnails = [];
 
@@ -20,12 +21,21 @@ internal sealed class TrayController : IDisposable
         this.changeSize = changeSize;
         this.reload = reload;
         this.quit = quit;
+        applicationIcon = LoadApplicationIcon();
         icon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = applicationIcon,
             Text = "PetRunner",
             Visible = true,
         };
+    }
+
+    private static Icon LoadApplicationIcon()
+    {
+        using var stream = typeof(TrayController).Assembly.GetManifestResourceStream("PetRunner.AppIcon.ico");
+        if (stream is null) return (Icon)SystemIcons.Application.Clone();
+        using var source = new Icon(stream);
+        return (Icon)source.Clone();
     }
 
     public void Update(
@@ -128,6 +138,7 @@ internal sealed class TrayController : IDisposable
     {
         icon.Visible = false;
         icon.Dispose();
+        applicationIcon.Dispose();
         foreach (var image in thumbnails.Values) image.Dispose();
     }
 }

@@ -11,10 +11,12 @@
     <PublishTrimmed>false</PublishTrimmed>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>../../Assets/AppIcon.ico</ApplicationIcon>
     <AssemblyName>PetRunner</AssemblyName>
     <Version>0.1.0</Version>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../PetRunner.Core/PetRunner.Core.csproj" />
+    <EmbeddedResource Include="../../Assets/AppIcon.ico" LogicalName="PetRunner.AppIcon.ico" />
   </ItemGroup>
 </Project>

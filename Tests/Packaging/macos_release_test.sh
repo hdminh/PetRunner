@@ -23,6 +23,9 @@ BINARY="$APP/Contents/MacOS/PetRunner"
 test -x "$BINARY"
 test "$(plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")" = "vn.hodinhminh.petrunner"
 test "$(plutil -extract LSMinimumSystemVersion raw "$APP/Contents/Info.plist")" = "14.0"
+ICON_FILE="$(plutil -extract CFBundleIconFile raw "$APP/Contents/Info.plist")"
+test "$ICON_FILE" = "AppIcon.icns"
+test -f "$APP/Contents/Resources/$ICON_FILE"
 
 ARCHS="$(lipo -archs "$BINARY")"
 case " $ARCHS " in *" arm64 "*) ;; *) exit 1 ;; esac

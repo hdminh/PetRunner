@@ -22,7 +22,18 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
-        statusItem.button?.image = NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: "PetRunner")
+        if
+            let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+            let icon = NSImage(contentsOf: iconURL)
+        {
+            icon.size = CGSize(width: 18, height: 18)
+            statusItem.button?.image = icon
+        } else {
+            statusItem.button?.image = NSImage(
+                systemSymbolName: "pawprint.fill",
+                accessibilityDescription: "PetRunner"
+            )
+        }
         statusItem.button?.toolTip = "PetRunner"
         statusItem.menu = menu
         rebuildMenu()
