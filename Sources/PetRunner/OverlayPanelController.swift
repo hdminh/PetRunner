@@ -6,6 +6,7 @@ import PetRunnerCore
 final class OverlayPanelController: NSObject, SpriteViewDelegate {
     var onPositionChanged: ((CGPoint) -> Void)?
     var onSizeChanged: ((CGFloat) -> Void)?
+    var onFrameChanged: ((CGRect) -> Void)?
 
     private let logger = Logger(subsystem: "vn.hodinhminh.petrunner", category: "overlay")
     private let panel: NSPanel
@@ -25,8 +26,11 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
     private var interactionActive = false
     private var lastPointerLocation: CGPoint?
     private var lastPointerMovementTime: TimeInterval = -.infinity
+    private var monitorAnimation: AnimationState?
 
     private let physicalPointerLookDuration: TimeInterval = 0.6
+
+    var frame: CGRect { panel.frame }
 
     override init() {
         spriteView = SpriteView(frame: CGRect(x: 0, y: 0, width: 112, height: 121.33))
@@ -76,6 +80,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         panel.setFrameOrigin(clampedOrigin(initial))
         renderCurrentFrame()
         panel.orderFrontRegardless()
+        onFrameChanged?(panel.frame)
     }
 
     func hide() {
@@ -89,6 +94,14 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         resize(to: width, anchorTopLeft: true)
         onSizeChanged?(panel.frame.width)
         onPositionChanged?(panel.frame.origin)
+        onFrameChanged?(panel.frame)
+    }
+
+    func setMonitorAnimation(_ state: AnimationState?) {
+        guard monitorAnimation != state else { return }
+        monitorAnimation = state
+        playback.start(state ?? (motion == nil ? .idle : playback.state))
+        renderCurrentFrame()
     }
 
     func clampToAvailableScreens() {
@@ -106,17 +119,20 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
 
     func spriteViewDidClick(_ view: SpriteView) {
         motion = nil
+        guard monitorAnimation == nil else { return }
         playback.start(.jumping)
         renderCurrentFrame()
     }
 
     func spriteViewDidHover(_ view: SpriteView) {
+        guard monitorAnimation == nil else { return }
         guard !interactionActive, motion == nil, playback.state == .idle else { return }
         playback.start(.jumping)
         renderCurrentFrame()
     }
 
     func spriteViewDidEndHover(_ view: SpriteView) {
+        guard monitorAnimation == nil else { return }
         guard !interactionActive, motion == nil, playback.state == .jumping else { return }
         playback.start(.idle)
         renderCurrentFrame()
@@ -140,6 +156,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
             y: dragStartOrigin.y + pointer.y - dragStartPointer.y
         )
         panel.setFrameOrigin(clampedOrigin(candidate))
+        onFrameChanged?(panel.frame)
         renderCurrentFrame()
     }
 
@@ -153,7 +170,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
             motion = MotionState(origin: panel.frame.origin, velocity: velocity)
             updateMovementAnimation(horizontalMotion: velocity.dx, useRightWhenVertical: true)
         } else {
-            playback.start(.idle)
+            playback.start(monitorAnimation ?? .idle)
         }
         renderCurrentFrame()
     }
@@ -177,6 +194,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         resizeStartWidth = nil
         onSizeChanged?(panel.frame.width)
         onPositionChanged?(panel.frame.origin)
+        onFrameChanged?(panel.frame)
     }
 
     @objc private func screenConfigurationChanged() {
@@ -194,10 +212,12 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
             let bounds = bestScreen(for: panel.frame)?.visibleFrame ?? NSScreen.main?.visibleFrame ?? panel.frame
             physics.step(&currentMotion, size: panel.frame.size, bounds: bounds, deltaTime: delta)
             panel.setFrameOrigin(currentMotion.origin)
+            onFrameChanged?(panel.frame)
             if currentMotion.velocity == .zero {
                 motion = nil
-                playback.start(.idle)
+                playback.start(monitorAnimation ?? .idle)
                 onPositionChanged?(panel.frame.origin)
+                onFrameChanged?(panel.frame)
             } else {
                 motion = currentMotion
                 updateMovementAnimation(horizontalMotion: currentMotion.velocity.dx, useRightWhenVertical: true)
@@ -210,6 +230,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         horizontalMotion: CGFloat,
         useRightWhenVertical: Bool = false
     ) {
+        guard monitorAnimation == nil else { return }
         let movementState: AnimationState
         if abs(horizontalMotion) >= 0.5 {
             movementState = horizontalMotion < 0 ? .runningLeft : .runningRight

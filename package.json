@@ -1,0 +1,38 @@
+{
+  "name": "@hdminh/pet-runner",
+  "version": "0.1.0",
+  "description": "Build and run PetRunner locally on macOS and Windows.",
+  "type": "module",
+  "bin": {
+    "pet-runner": "bin/pet-runner.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "Assets/",
+    "Sources/",
+    "Support/",
+    "windows/",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "pack:check": "npm pack --dry-run"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "win32"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hdminh/PetRunner.git"
+  },
+  "keywords": [
+    "pet",
+    "desktop-pet",
+    "codex"
+  ]
+}

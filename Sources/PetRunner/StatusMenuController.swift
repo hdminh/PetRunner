@@ -7,6 +7,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     var onSelectPet: ((String) -> Void)?
     var onSelectSize: ((CGFloat) -> Void)?
     var onReload: (() -> Void)?
+    var onToggleMonitor: (() -> Void)?
+    var onRepairMonitor: (() -> Void)?
     var onQuit: (() -> Void)?
 
     private let statusItem: NSStatusItem
@@ -15,6 +17,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private var failures: [PetFailure] = []
     private var selectedID: String?
     private var selectedWidth: CGFloat = 112
+    private var monitorEnabled = false
     private var petSubmenu: NSMenu?
     private var previewView: PetPreviewMenuView?
     private var thumbnailCache: [ThumbnailKey: NSImage] = [:]
@@ -43,12 +46,14 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         pets: [PetDescriptor],
         failures: [PetFailure],
         selectedID: String?,
-        width: CGFloat
+        width: CGFloat,
+        monitorEnabled: Bool = false
     ) {
         self.pets = pets
         self.failures = failures
         self.selectedID = selectedID
         selectedWidth = width
+        self.monitorEnabled = monitorEnabled
         let activeKeys = Set(pets.map(thumbnailKey(for:)))
         thumbnailCache = thumbnailCache.filter { activeKeys.contains($0.key) }
         rebuildMenu()
@@ -66,7 +71,6 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         changePetItem.submenu = makePetSubmenu()
         menu.addItem(changePetItem)
 
-        menu.addItem(.separator())
         let sizeMenu = NSMenu(title: "Size")
         for (title, width) in [
             ("Small", CGFloat(80)),
@@ -84,6 +88,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         sizeItem.submenu = sizeMenu
         menu.addItem(sizeItem)
 
+        let reload = NSMenuItem(title: "Reload Pets", action: #selector(reloadPets), keyEquivalent: "r")
+        reload.target = self
+        menu.addItem(reload)
+
         if !failures.isEmpty {
             let errorMenu = NSMenu(title: "Unavailable Pets")
             for failure in failures {
@@ -98,9 +106,22 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
-        let reload = NSMenuItem(title: "Reload Pets", action: #selector(reloadPets), keyEquivalent: "r")
-        reload.target = self
-        menu.addItem(reload)
+        let monitorMenu = NSMenu(title: "Agent Monitor")
+        let monitor = NSMenuItem(title: "Enable Agent Monitor", action: #selector(toggleMonitor), keyEquivalent: "")
+        monitor.target = self
+        monitor.state = monitorEnabled ? .on : .off
+        monitorMenu.addItem(monitor)
+        if monitorEnabled {
+            monitorMenu.addItem(.separator())
+            let repair = NSMenuItem(title: "Repair Hook Configuration…", action: #selector(repairMonitor), keyEquivalent: "")
+            repair.target = self
+            monitorMenu.addItem(repair)
+        }
+        let monitorItem = NSMenuItem(title: "Agent Monitor", action: nil, keyEquivalent: "")
+        monitorItem.submenu = monitorMenu
+        menu.addItem(monitorItem)
+
+        menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit PetRunner", action: #selector(quitApp), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
@@ -201,6 +222,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     @objc private func reloadPets() { onReload?() }
+    @objc private func toggleMonitor() { onToggleMonitor?() }
+    @objc private func repairMonitor() { onRepairMonitor?() }
     @objc private func quitApp() { onQuit?() }
 }
 
