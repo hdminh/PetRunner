@@ -11,7 +11,7 @@ public struct AtlasAddress: Hashable, Equatable {
     }
 }
 
-public enum AnimationState: String, CaseIterable {
+public enum AnimationState: String, CaseIterable, Sendable {
     case idle
     case runningRight = "running-right"
     case runningLeft = "running-left"
@@ -84,7 +84,7 @@ public struct AnimationPlayback {
     public init(
         state: AnimationState = .idle,
         idleActions: [IdleAction] = [.standard],
-        idleDelayProvider: @escaping () -> TimeInterval = { Double.random(in: 5...10) },
+        idleDelayProvider: @escaping () -> TimeInterval = { Double.random(in: 1...3) },
         idleActionIndexProvider: @escaping (Int) -> Int = { Int.random(in: 0..<$0) }
     ) {
         self.state = state
@@ -187,7 +187,7 @@ public struct AnimationPlayback {
 
     private mutating func scheduleNextIdleAction() {
         let requestedDelay = idleDelayProvider()
-        idleWaitRemaining = requestedDelay.isFinite ? min(max(requestedDelay, 5), 10) : 5
+        idleWaitRemaining = requestedDelay.isFinite ? min(max(requestedDelay, 1), 3) : 1
     }
 
     public var atlasAddress: AtlasAddress {

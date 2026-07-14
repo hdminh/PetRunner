@@ -23,6 +23,8 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
     private var resizeStartPointer: CGPoint?
     private var resizeStartWidth: CGFloat?
     private var interactionActive = false
+    private var lastPointerLocation: CGPoint?
+    private var lastPointerMovedAt = 0.0
 
     override init() {
         spriteView = SpriteView(frame: CGRect(x: 0, y: 0, width: 112, height: 121.33))
@@ -64,6 +66,8 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         self.pet = pet
         playback.start(.idle)
         motion = nil
+        lastPointerLocation = NSEvent.mouseLocation
+        lastPointerMovedAt = 0
         resize(to: width, anchorTopLeft: false)
 
         let initial = savedOrigin ?? defaultOrigin(for: panel.frame.size)
@@ -77,6 +81,8 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         atlas = nil
         pet = nil
         motion = nil
+        lastPointerLocation = nil
+        lastPointerMovedAt = 0
     }
 
     func setWidth(_ width: CGFloat) {
@@ -172,6 +178,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         previousTick = now
 
         playback.advance(by: delta)
+        updatePointerMotion(at: now)
         if var currentMotion = motion {
             let bounds = bestScreen(for: panel.frame)?.visibleFrame ?? NSScreen.main?.visibleFrame ?? panel.frame
             physics.step(&currentMotion, size: panel.frame.size, bounds: bounds, deltaTime: delta)
@@ -212,7 +219,8 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         if pet.version == .v2,
            playback.state == .idle,
            !interactionActive,
-           motion == nil {
+           motion == nil,
+           ProcessInfo.processInfo.systemUptime - lastPointerMovedAt <= 0.75 {
             let pointer = NSEvent.mouseLocation
             let center = CGPoint(x: panel.frame.midX, y: panel.frame.midY)
             let vector = CGVector(dx: pointer.x - center.x, dy: pointer.y - center.y)
@@ -222,6 +230,15 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
             }
         }
         spriteView.display(atlas.frame(at: address))
+    }
+
+    private func updatePointerMotion(at now: TimeInterval) {
+        let location = NSEvent.mouseLocation
+        defer { lastPointerLocation = location }
+        guard let lastPointerLocation, hypot(location.x - lastPointerLocation.x, location.y - lastPointerLocation.y) >= 1 else {
+            return
+        }
+        lastPointerMovedAt = now
     }
 
     private func resize(to requestedWidth: CGFloat, anchorTopLeft: Bool) {

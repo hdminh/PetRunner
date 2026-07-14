@@ -26,8 +26,8 @@ struct AnimationTests {
     }
 
     @Test func idleWaitsBeforePlayingAnAction() {
-        var playback = AnimationPlayback(idleDelayProvider: { 5 })
-        playback.advance(by: 4.99)
+        var playback = AnimationPlayback(idleDelayProvider: { 2 })
+        playback.advance(by: 1.99)
         #expect(playback.state == .idle)
         #expect(playback.frameIndex == 0)
 
@@ -38,13 +38,13 @@ struct AnimationTests {
     }
 
     @Test func idleActionReturnsToAFreshWait() {
-        var playback = AnimationPlayback(idleDelayProvider: { 5 })
+        var playback = AnimationPlayback(idleDelayProvider: { 2 })
         let actionDuration = AnimationState.idle.frameDurations.reduce(0, +)
-        playback.advance(by: 5 + actionDuration)
+        playback.advance(by: 2 + actionDuration)
         #expect(playback.state == .idle)
         #expect(playback.frameIndex == 0)
 
-        playback.advance(by: 4.99)
+        playback.advance(by: 1.99)
         #expect(playback.frameIndex == 0)
         playback.advance(by: 0.01 + AnimationState.idle.frameDurations[0])
         #expect(playback.frameIndex == 1)
@@ -54,31 +54,31 @@ struct AnimationTests {
         let actions = [IdleAction(columns: [1, 2]), IdleAction(columns: [3, 4])]
         var playback = AnimationPlayback(
             idleActions: actions,
-            idleDelayProvider: { 5 },
+            idleDelayProvider: { 2 },
             idleActionIndexProvider: { _ in 1 }
         )
-        playback.advance(by: 5)
+        playback.advance(by: 2)
         #expect(playback.frameIndex == 3)
         playback.advance(by: AnimationState.idle.frameDurations[3])
         #expect(playback.frameIndex == 4)
     }
 
-    @Test func idleDelayIsClampedToFiveThroughTenSeconds() {
+    @Test func idleDelayIsClampedToOneThroughThreeSeconds() {
         var shortDelay = AnimationPlayback(idleDelayProvider: { 0 })
-        shortDelay.advance(by: 5)
+        shortDelay.advance(by: 1)
         shortDelay.advance(by: AnimationState.idle.frameDurations[0])
         #expect(shortDelay.frameIndex == 1)
 
         var longDelay = AnimationPlayback(idleDelayProvider: { 100 })
-        longDelay.advance(by: 9.99)
+        longDelay.advance(by: 2.99)
         #expect(longDelay.frameIndex == 0)
         longDelay.advance(by: 0.01 + AnimationState.idle.frameDurations[0])
         #expect(longDelay.frameIndex == 1)
     }
 
     @Test func playbackChangesFrameAtExactBoundary() {
-        var playback = AnimationPlayback(idleDelayProvider: { 5 })
-        playback.advance(by: 5)
+        var playback = AnimationPlayback(idleDelayProvider: { 2 })
+        playback.advance(by: 2)
         playback.advance(by: AnimationState.idle.frameDurations[0] - 0.001)
         #expect(playback.frameIndex == 0)
         playback.advance(by: 0.001)
