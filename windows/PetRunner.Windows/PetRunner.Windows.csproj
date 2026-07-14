@@ -4,6 +4,7 @@
     <OutputType>WinExe</OutputType>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
+    <UseSystemDrawing>true</UseSystemDrawing>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
@@ -18,5 +19,8 @@
   <ItemGroup>
     <ProjectReference Include="../PetRunner.Core/PetRunner.Core.csproj" />
     <EmbeddedResource Include="../../Assets/AppIcon.ico" LogicalName="PetRunner.AppIcon.ico" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(RustBridgePath)' != ''">
+    <Content Include="$(RustBridgePath)" Link="petrunner_bridge.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

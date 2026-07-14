@@ -8,7 +8,7 @@ if arguments.contains("--agent-monitor-hook") {
 }
 if arguments.contains("--agent-monitor-cleanup") {
     do {
-        try ProviderHookInstaller().removeAll()
+        try RustMonitor.removeAllHooks()
         exit(0)
     } catch {
         exit(1)
@@ -17,6 +17,7 @@ if arguments.contains("--agent-monitor-cleanup") {
 
 let application = NSApplication.shared
 let applicationDelegate = AppDelegate()
+applicationDelegate.configureAgentMonitorOnLaunch = arguments.contains("--configure-agent-monitor")
 application.delegate = applicationDelegate
 application.setActivationPolicy(.accessory)
 application.run()

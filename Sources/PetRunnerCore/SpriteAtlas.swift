@@ -1,48 +1,51 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import UniformTypeIdentifiers
 
+/// Rust owns decode, validation, cropping, and PNG production. This adapter only creates a
+/// native image object for AppKit presentation.
 public final class SpriteAtlas {
     public static let cellSize = CGSize(width: 192, height: 208)
 
     public let version: SpriteVersion
-    private let frames: [AtlasAddress: CGImage]
+    private var handle: UnsafeMutableRawPointer?
 
     public convenience init(contentsOf url: URL, version: SpriteVersion) throws {
-        guard
-            let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-            let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
-        else {
-            throw PetLoadError.unreadableSpritesheet(url)
-        }
-        try self.init(image: image, version: version)
+        try self.init(path: url.path, version: version)
     }
 
-    public init(image: CGImage, version: SpriteVersion) throws {
-        let actual = CGSize(width: image.width, height: image.height)
-        guard actual == version.expectedSize else {
-            throw PetLoadError.invalidAtlasDimensions(expected: version.expectedSize, actual: actual)
+    public convenience init(image: CGImage, version: SpriteVersion) throws {
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("petrunner-atlas-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        guard let destination = CGImageDestinationCreateWithURL(temporary as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+            throw PetLoadError.unreadableSpritesheet(temporary)
         }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { throw PetLoadError.unreadableSpritesheet(temporary) }
+        try self.init(path: temporary.path, version: version)
+    }
+
+    private init(path: String, version: SpriteVersion) throws {
         self.version = version
-
-        var cropped: [AtlasAddress: CGImage] = [:]
-        for row in 0..<version.rowCount {
-            for column in 0..<8 {
-                let rect = CGRect(
-                    x: column * Int(Self.cellSize.width),
-                    y: row * Int(Self.cellSize.height),
-                    width: Int(Self.cellSize.width),
-                    height: Int(Self.cellSize.height)
-                )
-                if let frame = image.cropping(to: rect) {
-                    cropped[AtlasAddress(row: row, column: column)] = frame
-                }
-            }
+        var newHandle: UnsafeMutableRawPointer?
+        let status = path.withCString { RustBridge.shared.atlasCreate($0, Int32(version.rawValue), &newHandle) }
+        guard status == RustBridge.ok, let newHandle else {
+            throw PetLoadError.unreadableSpritesheet(URL(fileURLWithPath: path))
         }
-        frames = cropped
+        handle = newHandle
     }
+
+    deinit { RustBridge.shared.atlasDestroy(handle) }
 
     public func frame(at address: AtlasAddress) -> CGImage? {
-        frames[address]
+        guard let handle else { return nil }
+        let data = try? RustBridge.decodeBuffer { buffer in
+            RustBridge.shared.atlasFrame(UnsafeRawPointer(handle), Int32(address.row), Int32(address.column), buffer)
+        }
+        guard let data,
+              let source = CGImageSourceCreateWithData(data as CFData, nil)
+        else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 }

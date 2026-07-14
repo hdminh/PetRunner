@@ -5,6 +5,15 @@ $Output = Join-Path $Root "dist/windows-x64"
 $Tests = Join-Path $Root "windows/PetRunner.Tests/PetRunner.Tests.csproj"
 $App = Join-Path $Root "windows/PetRunner.Windows/PetRunner.Windows.csproj"
 
+if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) { throw "Rust cargo is required. Run: pet-runner setup" }
+
+Push-Location $Root
+try {
+    & cargo build --release --target x86_64-pc-windows-msvc -p petrunner-bridge
+    if ($LASTEXITCODE -ne 0) { throw "Rust bridge build failed" }
+}
+finally { Pop-Location }
+
 dotnet run --configuration Release --project $Tests
 if (Test-Path $Output) { Remove-Item $Output -Recurse -Force }
 dotnet publish $App `
@@ -12,6 +21,7 @@ dotnet publish $App `
     --runtime win-x64 `
     --self-contained true `
     -p:PublishSingleFile=true `
+    "-p:RustBridgePath=$Root/target/x86_64-pc-windows-msvc/release/petrunner_bridge.dll" `
     --output $Output
 
 $Exe = Join-Path $Output "PetRunner.exe"

@@ -1,5 +1,4 @@
 import AppKit
-import ImageIO
 import PetRunnerCore
 
 @MainActor
@@ -180,9 +179,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
         let thumbnail: NSImage? = autoreleasepool {
             guard
-                let source = CGImageSourceCreateWithURL(pet.spritesheetURL as CFURL, nil),
-                let atlas = CGImageSourceCreateImageAtIndex(source, 0, nil),
-                let idleFrame = atlas.cropping(to: CGRect(x: 0, y: 0, width: 192, height: 208)),
+                let atlas = try? SpriteAtlas(contentsOf: pet.spritesheetURL, version: pet.version),
+                let idleFrame = atlas.frame(at: AtlasAddress(row: 0, column: 0)),
                 let context = CGContext(
                     data: nil,
                     width: 144,

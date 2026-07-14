@@ -15,6 +15,16 @@ public partial class App : System.Windows.Application
 
     private void OnStartup(object sender, StartupEventArgs args)
     {
+        try
+        {
+            RustCore.EnsureAvailable();
+        }
+        catch (Exception error)
+        {
+            MessageBox.Show(error.Message, "PetRunner could not start", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown();
+            return;
+        }
         petsPath = ResolvePetsPath(args.Args);
         settings = SettingsStore.Load();
         overlay = new OverlayWindow();
