@@ -52,25 +52,75 @@ public enum AnimationState: String, CaseIterable {
     public var isOneShot: Bool { self == .jumping }
 }
 
+public struct IdleAction: Equatable, Sendable {
+    public static let standard = IdleAction(columns: Array(0..<6))
+
+    public let columns: [Int]
+
+    public init(columns: [Int]) {
+        let validColumns = columns.filter { AnimationState.idle.frameDurations.indices.contains($0) }
+        self.columns = validColumns.isEmpty ? [0] : validColumns
+    }
+}
+
 public struct AnimationPlayback {
+    private enum IdlePhase {
+        case waiting
+        case playing
+    }
+
     public private(set) var state: AnimationState
     public private(set) var frameIndex: Int
     public private(set) var elapsedInFrame: TimeInterval
 
-    public init(state: AnimationState = .idle) {
+    private let idleActions: [IdleAction]
+    private let idleDelayProvider: () -> TimeInterval
+    private let idleActionIndexProvider: (Int) -> Int
+    private var idlePhase: IdlePhase
+    private var idleWaitRemaining: TimeInterval
+    private var idleActionColumns: [Int]
+    private var idleActionPosition: Int
+
+    public init(
+        state: AnimationState = .idle,
+        idleActions: [IdleAction] = [.standard],
+        idleDelayProvider: @escaping () -> TimeInterval = { Double.random(in: 5...10) },
+        idleActionIndexProvider: @escaping (Int) -> Int = { Int.random(in: 0..<$0) }
+    ) {
         self.state = state
+        self.idleActions = idleActions.isEmpty ? [.standard] : idleActions
+        self.idleDelayProvider = idleDelayProvider
+        self.idleActionIndexProvider = idleActionIndexProvider
         frameIndex = 0
         elapsedInFrame = 0
+        idlePhase = .waiting
+        idleWaitRemaining = 0
+        idleActionColumns = []
+        idleActionPosition = 0
+        if state == .idle {
+            scheduleNextIdleAction()
+        }
     }
 
     public mutating func start(_ newState: AnimationState) {
         state = newState
         frameIndex = 0
         elapsedInFrame = 0
+        if newState == .idle {
+            idlePhase = .waiting
+            idleActionColumns = []
+            idleActionPosition = 0
+            scheduleNextIdleAction()
+        }
     }
 
     public mutating func advance(by deltaTime: TimeInterval) {
         guard deltaTime > 0 else { return }
+        if state == .idle {
+            advanceIdle(by: deltaTime)
+            return
+        }
+
         elapsedInFrame += deltaTime
 
         while elapsedInFrame + 1e-12 >= state.frameDurations[frameIndex] {
@@ -84,6 +134,60 @@ public struct AnimationPlayback {
                 frameIndex = 0
             }
         }
+    }
+
+    private mutating func advanceIdle(by deltaTime: TimeInterval) {
+        var remaining = deltaTime
+
+        while remaining > 1e-12 {
+            switch idlePhase {
+            case .waiting:
+                if remaining + 1e-12 < idleWaitRemaining {
+                    idleWaitRemaining -= remaining
+                    return
+                }
+                remaining = max(0, remaining - idleWaitRemaining)
+                beginIdleAction()
+
+            case .playing:
+                let frameDuration = AnimationState.idle.frameDurations[frameIndex]
+                let timeToBoundary = frameDuration - elapsedInFrame
+                if remaining + 1e-12 < timeToBoundary {
+                    elapsedInFrame += remaining
+                    return
+                }
+
+                remaining = max(0, remaining - timeToBoundary)
+                elapsedInFrame = 0
+                idleActionPosition += 1
+                if idleActionPosition == idleActionColumns.count {
+                    frameIndex = 0
+                    idlePhase = .waiting
+                    idleActionColumns = []
+                    idleActionPosition = 0
+                    scheduleNextIdleAction()
+                } else {
+                    frameIndex = idleActionColumns[idleActionPosition]
+                }
+            }
+        }
+    }
+
+    private mutating func beginIdleAction() {
+        let count = idleActions.count
+        let requestedIndex = idleActionIndexProvider(count)
+        let index = ((requestedIndex % count) + count) % count
+        idleActionColumns = idleActions[index].columns
+        idleActionPosition = 0
+        frameIndex = idleActionColumns[0]
+        elapsedInFrame = 0
+        idlePhase = .playing
+        idleWaitRemaining = 0
+    }
+
+    private mutating func scheduleNextIdleAction() {
+        let requestedDelay = idleDelayProvider()
+        idleWaitRemaining = requestedDelay.isFinite ? min(max(requestedDelay, 5), 10) : 5
     }
 
     public var atlasAddress: AtlasAddress {

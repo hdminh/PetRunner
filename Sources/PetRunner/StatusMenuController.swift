@@ -1,8 +1,9 @@
 import AppKit
+import ImageIO
 import PetRunnerCore
 
 @MainActor
-final class StatusMenuController: NSObject {
+final class StatusMenuController: NSObject, NSMenuDelegate {
     var onSelectPet: ((String) -> Void)?
     var onSelectSize: ((CGFloat) -> Void)?
     var onReload: (() -> Void)?
@@ -14,6 +15,9 @@ final class StatusMenuController: NSObject {
     private var failures: [PetFailure] = []
     private var selectedID: String?
     private var selectedWidth: CGFloat = 112
+    private var petSubmenu: NSMenu?
+    private var previewView: PetPreviewMenuView?
+    private var thumbnailCache: [ThumbnailKey: NSImage] = [:]
 
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -34,6 +38,8 @@ final class StatusMenuController: NSObject {
         self.failures = failures
         self.selectedID = selectedID
         selectedWidth = width
+        let activeKeys = Set(pets.map(thumbnailKey(for:)))
+        thumbnailCache = thumbnailCache.filter { activeKeys.contains($0.key) }
         rebuildMenu()
     }
 
@@ -45,24 +51,18 @@ final class StatusMenuController: NSObject {
         menu.addItem(heading)
         menu.addItem(.separator())
 
-        if pets.isEmpty {
-            let empty = NSMenuItem(title: "No valid pets found", action: nil, keyEquivalent: "")
-            empty.isEnabled = false
-            menu.addItem(empty)
-        } else {
-            for pet in pets {
-                let item = NSMenuItem(title: pet.displayName, action: #selector(selectPet(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = pet.id
-                item.state = pet.id == selectedID ? .on : .off
-                item.toolTip = pet.description
-                menu.addItem(item)
-            }
-        }
+        let changePetItem = NSMenuItem(title: "Change Pet", action: nil, keyEquivalent: "")
+        changePetItem.submenu = makePetSubmenu()
+        menu.addItem(changePetItem)
 
         menu.addItem(.separator())
         let sizeMenu = NSMenu(title: "Size")
-        for (title, width) in [("Small", CGFloat(80)), ("Medium", CGFloat(112)), ("Large", CGFloat(160))] {
+        for (title, width) in [
+            ("Small", CGFloat(80)),
+            ("Medium", CGFloat(112)),
+            ("Large", CGFloat(160)),
+            ("XL", CGFloat(224)),
+        ] {
             let item = NSMenuItem(title: "\(title) — \(Int(width)) px", action: #selector(selectSize(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = NSNumber(value: Double(width))
@@ -95,6 +95,90 @@ final class StatusMenuController: NSObject {
         menu.addItem(quit)
     }
 
+    private func makePetSubmenu() -> NSMenu {
+        let submenu = NSMenu(title: "Change Pet")
+        submenu.delegate = self
+        petSubmenu = submenu
+
+        guard !pets.isEmpty else {
+            previewView = nil
+            let empty = NSMenuItem(title: "No valid pets found", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            submenu.addItem(empty)
+            return submenu
+        }
+
+        let initialPet = pets.first(where: { $0.id == selectedID }) ?? pets[0]
+        let preview = PetPreviewMenuView(frame: CGRect(x: 0, y: 0, width: 260, height: 88))
+        preview.update(pet: initialPet, image: thumbnail(for: initialPet))
+        previewView = preview
+        let previewItem = NSMenuItem()
+        previewItem.view = preview
+        previewItem.isEnabled = false
+        submenu.addItem(previewItem)
+        submenu.addItem(.separator())
+
+        for pet in pets {
+            let item = NSMenuItem(title: pet.displayName, action: #selector(selectPet(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = pet.id
+            item.state = pet.id == selectedID ? .on : .off
+            item.toolTip = pet.description
+            if let image = thumbnail(for: pet)?.copy() as? NSImage {
+                image.size = CGSize(width: 24, height: 26)
+                item.image = image
+            }
+            submenu.addItem(item)
+        }
+        return submenu
+    }
+
+    func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+        guard
+            menu === petSubmenu,
+            let id = item?.representedObject as? String,
+            let pet = pets.first(where: { $0.id == id })
+        else { return }
+        previewView?.update(pet: pet, image: thumbnail(for: pet))
+    }
+
+    private func thumbnail(for pet: PetDescriptor) -> NSImage? {
+        let key = thumbnailKey(for: pet)
+        if let cached = thumbnailCache[key] { return cached }
+
+        let thumbnail: NSImage? = autoreleasepool {
+            guard
+                let source = CGImageSourceCreateWithURL(pet.spritesheetURL as CFURL, nil),
+                let atlas = CGImageSourceCreateImageAtIndex(source, 0, nil),
+                let idleFrame = atlas.cropping(to: CGRect(x: 0, y: 0, width: 192, height: 208)),
+                let context = CGContext(
+                    data: nil,
+                    width: 144,
+                    height: 156,
+                    bitsPerComponent: 8,
+                    bytesPerRow: 0,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                )
+            else { return nil }
+
+            context.clear(CGRect(x: 0, y: 0, width: 144, height: 156))
+            context.interpolationQuality = .high
+            context.draw(idleFrame, in: CGRect(x: 0, y: 0, width: 144, height: 156))
+            guard let rasterized = context.makeImage() else { return nil }
+            return NSImage(cgImage: rasterized, size: CGSize(width: 72, height: 78))
+        }
+        if let thumbnail { thumbnailCache[key] = thumbnail }
+        return thumbnail
+    }
+
+    private func thumbnailKey(for pet: PetDescriptor) -> ThumbnailKey {
+        let modificationDate = try? pet.spritesheetURL
+            .resourceValues(forKeys: [.contentModificationDateKey])
+            .contentModificationDate
+        return ThumbnailKey(path: pet.spritesheetURL.path, modificationDate: modificationDate)
+    }
+
     @objc private func selectPet(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
         onSelectPet?(id)
@@ -107,4 +191,48 @@ final class StatusMenuController: NSObject {
 
     @objc private func reloadPets() { onReload?() }
     @objc private func quitApp() { onQuit?() }
+}
+
+private struct ThumbnailKey: Hashable {
+    let path: String
+    let modificationDate: Date?
+}
+
+@MainActor
+private final class PetPreviewMenuView: NSView {
+    private let imageView = NSImageView()
+    private let nameLabel = NSTextField(labelWithString: "")
+    private let descriptionLabel = NSTextField(wrappingLabelWithString: "")
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        imageView.frame = CGRect(x: 10, y: 7, width: 68, height: 74)
+        imageView.imageAlignment = .alignCenter
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.unregisterDraggedTypes()
+        addSubview(imageView)
+
+        nameLabel.frame = CGRect(x: 88, y: 49, width: 162, height: 20)
+        nameLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        nameLabel.lineBreakMode = .byTruncatingTail
+        addSubview(nameLabel)
+
+        descriptionLabel.frame = CGRect(x: 88, y: 13, width: 162, height: 34)
+        descriptionLabel.font = .systemFont(ofSize: 10)
+        descriptionLabel.textColor = .secondaryLabelColor
+        descriptionLabel.maximumNumberOfLines = 2
+        descriptionLabel.lineBreakMode = .byTruncatingTail
+        addSubview(descriptionLabel)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func update(pet: PetDescriptor, image: NSImage?) {
+        imageView.image = image
+        nameLabel.stringValue = pet.displayName
+        descriptionLabel.stringValue = pet.description ?? "Codex-compatible pet"
+        setAccessibilityLabel("Preview of \(pet.displayName)")
+    }
 }

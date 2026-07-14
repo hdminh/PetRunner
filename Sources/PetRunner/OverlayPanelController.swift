@@ -115,12 +115,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
     func spriteView(_ view: SpriteView, dragDidMoveTo pointer: CGPoint) {
         guard let dragStartPointer, let dragStartOrigin else { return }
         let horizontalDelta = pointer.x - (previousDragPointer?.x ?? dragStartPointer.x)
-        if abs(horizontalDelta) >= 0.5 {
-            let movementState: AnimationState = horizontalDelta > 0 ? .runningRight : .runningLeft
-            if playback.state != movementState {
-                playback.start(movementState)
-            }
-        }
+        updateMovementAnimation(horizontalMotion: horizontalDelta)
         previousDragPointer = pointer
         let candidate = CGPoint(
             x: dragStartOrigin.x + pointer.x - dragStartPointer.x,
@@ -135,16 +130,19 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         dragStartPointer = nil
         dragStartOrigin = nil
         previousDragPointer = nil
-        playback.start(.idle)
         onPositionChanged?(panel.frame.origin)
         if hypot(velocity.dx, velocity.dy) >= 120 {
             motion = MotionState(origin: panel.frame.origin, velocity: velocity)
+            updateMovementAnimation(horizontalMotion: velocity.dx, useRightWhenVertical: true)
+        } else {
+            playback.start(.idle)
         }
         renderCurrentFrame()
     }
 
     func spriteView(_ view: SpriteView, resizeDidBeginAt pointer: CGPoint) {
         motion = nil
+        playback.start(.idle)
         interactionActive = true
         resizeStartPointer = pointer
         resizeStartWidth = panel.frame.width
@@ -178,10 +176,34 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
             let bounds = bestScreen(for: panel.frame)?.visibleFrame ?? NSScreen.main?.visibleFrame ?? panel.frame
             physics.step(&currentMotion, size: panel.frame.size, bounds: bounds, deltaTime: delta)
             panel.setFrameOrigin(currentMotion.origin)
-            motion = currentMotion.velocity == .zero ? nil : currentMotion
-            if motion == nil { onPositionChanged?(panel.frame.origin) }
+            if currentMotion.velocity == .zero {
+                motion = nil
+                playback.start(.idle)
+                onPositionChanged?(panel.frame.origin)
+            } else {
+                motion = currentMotion
+                updateMovementAnimation(horizontalMotion: currentMotion.velocity.dx, useRightWhenVertical: true)
+            }
         }
         renderCurrentFrame()
+    }
+
+    private func updateMovementAnimation(
+        horizontalMotion: CGFloat,
+        useRightWhenVertical: Bool = false
+    ) {
+        let movementState: AnimationState
+        if abs(horizontalMotion) >= 0.5 {
+            movementState = horizontalMotion < 0 ? .runningLeft : .runningRight
+        } else {
+            guard useRightWhenVertical, playback.state != .runningLeft, playback.state != .runningRight else {
+                return
+            }
+            movementState = .runningRight
+        }
+        if playback.state != movementState {
+            playback.start(movementState)
+        }
     }
 
     private func renderCurrentFrame() {
