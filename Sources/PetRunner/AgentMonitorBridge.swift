@@ -83,6 +83,8 @@ final class AgentMonitorBridge: @unchecked Sendable {
 }
 
 enum AgentMonitorHookRunner {
+    private static let deliveryRetryDelays: [TimeInterval] = [0, 0.1, 0.25, 0.5, 1, 2]
+
     static func run(arguments: [String]) -> Int32 {
         guard let providerRaw = value(after: "--provider", in: arguments),
               let provider = AgentProvider(rawValue: providerRaw),
@@ -97,40 +99,75 @@ enum AgentMonitorHookRunner {
             return 0
         }
         guard input.count <= 64 * 1024,
-              let normalized = RustMonitor.normalize(provider: provider, payload: input, event: event),
-              let descriptorData = try? Data(contentsOf: AgentMonitorBridge.descriptorURL),
-              let descriptor = try? JSONDecoder().decode(AgentMonitorRuntimeDescriptor.self, from: descriptorData)
+              let normalized = RustMonitor.normalize(provider: provider, payload: input, event: event)
         else { return 0 }
 
+        for delay in deliveryRetryDelays {
+            if delay > 0 { Thread.sleep(forTimeInterval: delay) }
+            guard let descriptorData = try? Data(contentsOf: AgentMonitorBridge.descriptorURL),
+                  let descriptor = try? JSONDecoder().decode(AgentMonitorRuntimeDescriptor.self, from: descriptorData),
+                  let frame = frame(for: normalized, token: descriptor.token),
+                  let port = NWEndpoint.Port(rawValue: descriptor.port)
+            else { continue }
+            if send(frame, to: port) { break }
+        }
+        return 0
+    }
+
+    private static func frame(for event: NormalizedAgentEvent, token: String) -> Data? {
         let envelope = AgentMonitorEnvelope(
-            token: descriptor.token,
-            provider: normalized.provider,
-            sessionID: normalized.sessionID,
-            status: normalized.status,
-            displayName: normalized.displayName
+            token: token,
+            provider: event.provider,
+            sessionID: event.sessionID,
+            status: event.status,
+            displayName: event.displayName
         )
-        guard let data = try? JSONEncoder().encode(envelope), let port = NWEndpoint.Port(rawValue: descriptor.port) else { return 0 }
+        guard let data = try? JSONEncoder().encode(envelope) else { return nil }
         var length = UInt32(data.count).bigEndian
-        let header = Data(bytes: &length, count: MemoryLayout<UInt32>.size)
-        let frame = header + data
+        return Data(bytes: &length, count: MemoryLayout<UInt32>.size) + data
+    }
+
+    private static func send(_ frame: Data, to port: NWEndpoint.Port) -> Bool {
         let connection = NWConnection(host: "127.0.0.1", port: port, using: .tcp)
         let finished = DispatchSemaphore(value: 0)
+        let outcome = DeliveryOutcome()
         connection.stateUpdateHandler = { state in
             switch state {
             case .ready:
-                connection.send(content: frame, completion: .contentProcessed { _ in finished.signal() })
-            case .failed, .cancelled: finished.signal()
+                connection.send(content: frame, completion: .contentProcessed { error in
+                    outcome.setDelivered(error == nil)
+                    finished.signal()
+                })
+            case .failed, .cancelled:
+                finished.signal()
             default: break
             }
         }
         connection.start(queue: .global(qos: .utility))
         _ = finished.wait(timeout: .now() + .milliseconds(250))
         connection.cancel()
-        return 0
+        return outcome.delivered
     }
 
     private static func value(after flag: String, in arguments: [String]) -> String? {
         guard let index = arguments.firstIndex(of: flag), arguments.indices.contains(index + 1) else { return nil }
         return arguments[index + 1]
+    }
+
+    private final class DeliveryOutcome: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+
+        var delivered: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return value
+        }
+
+        func setDelivered(_ delivered: Bool) {
+            lock.lock()
+            value = delivered
+            lock.unlock()
+        }
     }
 }
