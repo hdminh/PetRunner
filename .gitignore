@@ -2,4 +2,6 @@
 dist/
 work/
 outputs/
+**/bin/
+**/obj/
 .DS_Store
