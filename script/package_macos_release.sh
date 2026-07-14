@@ -20,6 +20,9 @@ trap cleanup EXIT
 
 cd "$ROOT_DIR"
 for ARCH in arm64 x86_64; do
+  RUST_ARCH="$ARCH"
+  if [ "$ARCH" = "arm64" ]; then RUST_ARCH="aarch64"; fi
+  cargo build -p petrunner-bridge --release --target "$RUST_ARCH-apple-darwin"
   swift build \
     -c release \
     --triple "$ARCH-apple-macosx14.0" \
@@ -28,14 +31,19 @@ for ARCH in arm64 x86_64; do
 done
 
 rm -rf "$APP" "$DMG" "$DMG.sha256"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
 lipo -create \
   "$BUILD_ROOT/arm64/arm64-apple-macosx/release/$APP_NAME" \
   "$BUILD_ROOT/x86_64/x86_64-apple-macosx/release/$APP_NAME" \
   -output "$APP/Contents/MacOS/$APP_NAME"
+lipo -create \
+  "$ROOT_DIR/target/aarch64-apple-darwin/release/libpetrunner_bridge.dylib" \
+  "$ROOT_DIR/target/x86_64-apple-darwin/release/libpetrunner_bridge.dylib" \
+  -output "$APP/Contents/Frameworks/libpetrunner_bridge.dylib"
 cp "$INFO_PLIST" "$APP/Contents/Info.plist"
 cp "$ROOT_DIR/Assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 chmod +x "$APP/Contents/MacOS/$APP_NAME"
+codesign --force --options runtime --timestamp=none --identifier "$BUNDLE_ID.rust-core" --sign - "$APP/Contents/Frameworks/libpetrunner_bridge.dylib"
 
 codesign \
   --force \

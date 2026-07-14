@@ -54,7 +54,7 @@ final class AgentMonitorBridge: @unchecked Sendable {
             guard completePayload.count <= AgentMonitorEnvelope.maximumBytes + 4 else { connection.cancel(); return }
             if let payload = Self.payload(from: completePayload) {
                 defer { connection.cancel() }
-                guard let event = try? AgentMonitorEnvelope.decode(payload, expectedToken: self.token) else { return }
+                guard let event = RustMonitor.decodeEnvelope(payload, token: self.token) else { return }
                 DispatchQueue.main.async { [weak self] in self?.onEvent?(event) }
             } else if !isComplete && error == nil {
                 self.receiveEnvelope(from: connection, buffered: completePayload)
@@ -97,8 +97,7 @@ enum AgentMonitorHookRunner {
             return 0
         }
         guard input.count <= 64 * 1024,
-              let payload = (try? JSONSerialization.jsonObject(with: input)) as? [String: Any],
-              let normalized = ProviderHookConfiguration(provider: provider).normalize(payload: payload, eventName: event),
+              let normalized = RustMonitor.normalize(provider: provider, payload: input, event: event),
               let descriptorData = try? Data(contentsOf: AgentMonitorBridge.descriptorURL),
               let descriptor = try? JSONDecoder().decode(AgentMonitorRuntimeDescriptor.self, from: descriptorData)
         else { return 0 }

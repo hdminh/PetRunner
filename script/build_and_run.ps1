@@ -11,6 +11,9 @@ $App = Join-Path $Root "windows/PetRunner.Windows/PetRunner.Windows.csproj"
 if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
     throw ".NET 10 SDK is required. Install it from https://dotnet.microsoft.com/download/dotnet/10.0"
 }
+if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+    throw "Rust cargo is required. Run: pet-runner setup"
+}
 
 $Existing = Get-Process -Name "PetRunner" -ErrorAction SilentlyContinue
 if ($Existing) {
@@ -31,6 +34,8 @@ if ($PetsDir) {
 
 Push-Location $Root
 try {
+    & cargo build -p petrunner-bridge
+    if ($LASTEXITCODE -ne 0) { throw "Rust bridge build failed" }
     & dotnet @RunArguments
     if ($LASTEXITCODE -ne 0) {
         throw "PetRunner exited with code $LASTEXITCODE"

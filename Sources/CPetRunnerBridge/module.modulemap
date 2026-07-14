@@ -1,0 +1,4 @@
+module CPetRunnerBridge [system] {
+  header "../../rust/include/petrunner_bridge.h"
+  export *
+}

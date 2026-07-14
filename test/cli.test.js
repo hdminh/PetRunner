@@ -1,14 +1,63 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseArguments, resolveInstallPaths, uninstall } from "../lib/cli.js";
+import { doctor, parseArguments, resolveInstallPaths, setup, uninstall } from "../lib/cli.js";
 
 test("start is the default command", () => {
   assert.deepEqual(parseArguments([]), {
     command: "start",
     force: false,
     petsDir: undefined,
+    enableAgentMonitor: false,
   });
+});
+
+test("reports missing Rust prerequisites with remediation", () => {
+  const report = doctor({
+    platform: "darwin",
+    commandAvailable: (command) => command === "xcode-select" || command === "swift",
+  });
+  assert.equal(report.checks.find((check) => check.name === "Rust cargo")?.available, false);
+  assert.match(report.checks.find((check) => check.name === "Rust cargo")?.remediation ?? "", /setup/);
+});
+
+test("reports the selected Rust target separately", () => {
+  const report = doctor({
+    platform: "win32",
+    architecture: "x64",
+    commandAvailable: (command, args) => command !== "rustc" || args?.includes("target-libdir") !== true,
+  });
+  assert.equal(report.rustTarget, "x86_64-pc-windows-msvc");
+  assert.equal(report.checks.find((check) => check.name === "Rust target x86_64-pc-windows-msvc")?.available, false);
+});
+
+test("setup never runs an installer without consent", async () => {
+  const calls = [];
+  await setup({
+    platform: "darwin",
+    commandAvailable: () => false,
+    confirm: async () => false,
+    execute: (...args) => calls.push(args),
+  });
+  assert.deepEqual(calls, []);
+});
+
+test("setup asks for the Rust toolchain once when both cargo and rustc are missing", async () => {
+  const prompts = [];
+  const calls = [];
+  await setup({
+    platform: "darwin",
+    commandAvailable: (command) => command === "xcode-select" || command === "swift",
+    confirm: async (question) => {
+      prompts.push(question);
+      return true;
+    },
+    execute: (...args) => calls.push(args),
+  });
+
+  assert.deepEqual(prompts, ["The Rust toolchain is missing. Install it now?"]);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], "/bin/sh");
 });
 
 test("parses a custom pet directory", () => {

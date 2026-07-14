@@ -77,7 +77,7 @@ final class MonitorSetupWindowController: NSObject, NSWindowDelegate {
         guard !providers.isEmpty else { return }
         let handler = completion
         completion = nil
-        panel.close()
         handler?(providers)
+        panel.close()
     }
 }

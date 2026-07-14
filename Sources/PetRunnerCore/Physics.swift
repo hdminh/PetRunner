@@ -1,6 +1,8 @@
 import CoreGraphics
 import Foundation
+import CPetRunnerBridge
 
+/// Native coordinate adapters around Rust-owned motion calculations.
 public struct MotionState: Equatable {
     public var origin: CGPoint
     public var velocity: CGVector
@@ -29,47 +31,40 @@ public struct PhysicsEngine {
         self.maximumDeltaTime = maximumDeltaTime
     }
 
-    public func step(
-        _ motion: inout MotionState,
-        size: CGSize,
-        bounds: CGRect,
-        deltaTime: TimeInterval
-    ) {
-        let dt = CGFloat(max(0, min(deltaTime, maximumDeltaTime)))
-        guard dt > 0 else { return }
-
-        motion.origin.x += motion.velocity.dx * dt
-        motion.origin.y += motion.velocity.dy * dt
-
-        let maxX = max(bounds.minX, bounds.maxX - size.width)
-        let maxY = max(bounds.minY, bounds.maxY - size.height)
-        if motion.origin.x < bounds.minX {
-            motion.origin.x = bounds.minX
-            motion.velocity.dx = abs(motion.velocity.dx) * restitution
-        } else if motion.origin.x > maxX {
-            motion.origin.x = maxX
-            motion.velocity.dx = -abs(motion.velocity.dx) * restitution
-        }
-        if motion.origin.y < bounds.minY {
-            motion.origin.y = bounds.minY
-            motion.velocity.dy = abs(motion.velocity.dy) * restitution
-        } else if motion.origin.y > maxY {
-            motion.origin.y = maxY
-            motion.velocity.dy = -abs(motion.velocity.dy) * restitution
-        }
-
-        let retention = pow(velocityRetentionPerSecond, dt)
-        motion.velocity.dx *= retention
-        motion.velocity.dy *= retention
-        if hypot(motion.velocity.dx, motion.velocity.dy) < stopSpeed {
-            motion.velocity = .zero
-        }
+    public func step(_ motion: inout MotionState, size: CGSize, bounds: CGRect, deltaTime: TimeInterval) {
+        var coreMotion = PetrunnerMotionState(
+            x: motion.origin.x,
+            y: motion.origin.y,
+            velocity_x: motion.velocity.dx,
+            velocity_y: motion.velocity.dy
+        )
+        var result = PetrunnerPhysicsResult(horizontal_bounce: false, vertical_bounce: false)
+        let status = RustBridge.shared.physicsStep(
+            &coreMotion,
+            PetrunnerSize(width: size.width, height: size.height),
+            PetrunnerRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: bounds.height),
+            velocityRetentionPerSecond,
+            restitution,
+            stopSpeed,
+            maximumDeltaTime,
+            deltaTime,
+            &result
+        )
+        precondition(status == RustBridge.ok, RustBridgeError.operationFailed(status).localizedDescription)
+        motion.origin = CGPoint(x: coreMotion.x, y: coreMotion.y)
+        motion.velocity = CGVector(dx: coreMotion.velocity_x, dy: coreMotion.velocity_y)
     }
 
     public static func clampedOrigin(_ origin: CGPoint, size: CGSize, bounds: CGRect) -> CGPoint {
-        CGPoint(
-            x: min(max(origin.x, bounds.minX), max(bounds.minX, bounds.maxX - size.width)),
-            y: min(max(origin.y, bounds.minY), max(bounds.minY, bounds.maxY - size.height))
+        var result = PetrunnerMotionState(x: 0, y: 0, velocity_x: 0, velocity_y: 0)
+        let status = RustBridge.shared.physicsClamp(
+            origin.x,
+            origin.y,
+            PetrunnerSize(width: size.width, height: size.height),
+            PetrunnerRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: bounds.height),
+            &result
         )
+        precondition(status == RustBridge.ok, RustBridgeError.operationFailed(status).localizedDescription)
+        return CGPoint(x: result.x, y: result.y)
     }
 }

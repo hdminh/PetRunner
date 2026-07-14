@@ -1,0 +1,15 @@
+[workspace]
+members = [
+    "rust/crates/petrunner-core",
+    "rust/crates/petrunner-bridge",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT"
+
+[workspace.lints.rust]
+unsafe_code = "deny"

@@ -25,9 +25,9 @@ not start, embed, or connect to Codex. By default it reads
 Run commands from the repository root.
 
 ```bash
-# macOS app and tests
-swift test
-PETRUNNER_RUN_INSTALLED_PET_TESTS=1 swift test --filter InstalledPetsIntegrationTests
+# macOS app and tests (builds the Rust bridge first)
+./script/test_macos.sh
+PETRUNNER_RUN_INSTALLED_PET_TESTS=1 ./script/test_macos.sh --filter InstalledPetsIntegrationTests
 ./script/build_and_run.sh
 
 # npm CLI

@@ -167,8 +167,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\script\build_and_run.p
 macOS:
 
 ```bash
-swift test
-PETRUNNER_RUN_INSTALLED_PET_TESTS=1 swift test --filter InstalledPetsIntegrationTests
+./script/test_macos.sh
+PETRUNNER_RUN_INSTALLED_PET_TESTS=1 ./script/test_macos.sh --filter InstalledPetsIntegrationTests
 ```
 
 Windows:

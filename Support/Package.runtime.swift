@@ -9,8 +9,10 @@ let package = Package(
         .executable(name: "PetRunner", targets: ["PetRunner"]),
     ],
     targets: [
+        .systemLibrary(name: "CPetRunnerBridge"),
         .target(
             name: "PetRunnerCore",
+            dependencies: ["CPetRunnerBridge"],
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
         .executableTarget(name: "PetRunner", dependencies: ["PetRunnerCore"]),

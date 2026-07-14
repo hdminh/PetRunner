@@ -4,13 +4,13 @@ import PetRunnerCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    var configureAgentMonitorOnLaunch = false
     private let logger = Logger(subsystem: "vn.hodinhminh.petrunner", category: "app")
     private let preferences = PetRunnerPreferences()
     private let overlay = OverlayPanelController()
     private let monitorBridge = AgentMonitorBridge()
-    private var monitorStore = AgentSessionStore()
+    private let monitorStore = RustAgentSessionStore()
     private var terminalSessionExpiry: [AgentSessionKey: DispatchWorkItem] = [:]
-    private let cursorTitleResolver = CursorSessionTitleResolver()
     private var titleResolutionTasks: [AgentSessionKey: TitleResolutionTask] = [:]
     private let sessionBubble = SessionBubblePanelController()
     private var monitorSetup: MonitorSetupWindowController?
@@ -43,6 +43,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sessionBubble.onExpand = { [weak self] in self?.setMonitorBubbleCollapsed(false) }
         overlay.onFrameChanged = { [weak self] _ in self?.refreshMonitorPresentation() }
         reloadPets()
+        if configureAgentMonitorOnLaunch {
+            DispatchQueue.main.async { [weak self] in self?.presentMonitorSetup(exitAfterDismissal: true) }
+        }
         if preferences.monitorEnabled {
             do {
                 try startMonitorBridge()
@@ -131,7 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func toggleMonitor() {
         if preferences.monitorEnabled {
             do {
-                try ProviderHookInstaller().removeAll()
+                try RustMonitor.removeAllHooks()
                 preferences.monitorEnabled = false
                 preferences.monitorProviders = []
                 cancelTerminalExpiry()
@@ -147,18 +150,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             refreshMenu()
             return
         }
-        let detections = ProviderDetector.detect(existingPaths: Set([".claude", ".codex", ".cursor"].filter {
+        presentMonitorSetup(exitAfterDismissal: false)
+    }
+
+    private func presentMonitorSetup(exitAfterDismissal: Bool) {
+        let detections = RustMonitor.detect(existingPaths: Set([".claude", ".codex", ".cursor"].filter {
             FileManager.default.fileExists(atPath: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent($0).path)
         }))
         let setup = MonitorSetupWindowController()
         monitorSetup = setup
-        setup.onDismiss = { [weak self] in self?.monitorSetup = nil }
+        setup.onDismiss = { [weak self] in
+            self?.monitorSetup = nil
+            if exitAfterDismissal { NSApp.terminate(nil) }
+        }
         setup.present(detections: detections) { [weak self] providers in
             guard let self, !providers.isEmpty, let executable = Bundle.main.executableURL?.path else { return }
             do {
                 try self.startMonitorBridge()
                 do {
-                    try ProviderHookInstaller().install(providers, executablePath: executable)
+                    try RustMonitor.installHooks(providers, executablePath: executable)
                 } catch {
                     self.monitorBridge.stop()
                     throw error
@@ -180,7 +190,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         else { return }
         do {
             try startMonitorBridge()
-            try ProviderHookInstaller().install(preferences.monitorProviders, executablePath: executable)
+            try RustMonitor.installHooks(preferences.monitorProviders, executablePath: executable)
         } catch {
             logger.error("Failed to repair monitor hooks: \(error.localizedDescription, privacy: .public)")
             showMonitorError("PetRunner could not repair its monitor hooks. \(error.localizedDescription)")
@@ -252,7 +262,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard titleResolutionTasks[key] == nil,
               monitorStore.entries.first(where: { $0.key == key })?.displayName?.source != .nativeProvider
         else { return }
-        let resolver = cursorTitleResolver
         let identifier = UUID()
         let task = Task { [weak self] in
             defer { self?.completeTitleResolution(for: key, identifier: identifier) }
@@ -263,7 +272,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 guard !Task.isCancelled else { return }
                 let displayName = await Task.detached(priority: .utility) {
-                    resolver.displayName(for: key.sessionID)
+                    RustMonitor.cursorTitle(
+                        database: FileManager.default.homeDirectoryForCurrentUser
+                            .appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/conversation-search.db"),
+                        conversationID: key.sessionID
+                    )
                 }.value
                 guard !Task.isCancelled else { return }
                 if let displayName {

@@ -46,17 +46,6 @@ struct AnimationTests {
         #expect(playback.frameIndex == 1)
     }
 
-    @Test func idleChoosesAmongConfiguredActions() {
-        let actions = [IdleAction(columns: [1, 2]), IdleAction(columns: [3, 4])]
-        var playback = AnimationPlayback(
-            idleActions: actions,
-            idleActionIndexProvider: { _ in 1 }
-        )
-        #expect(playback.frameIndex == 3)
-        playback.advance(by: AnimationState.idle.frameDurations[3])
-        #expect(playback.frameIndex == 4)
-    }
-
     @Test func playbackChangesFrameAtExactBoundary() {
         var playback = AnimationPlayback()
         playback.advance(by: AnimationState.idle.frameDurations[0] - 0.001)

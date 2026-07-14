@@ -1,5 +1,25 @@
 # PetRunner
 
+## Local build prerequisites
+
+PetRunner builds its native hosts and Rust core locally. Normal installation
+never runs an installer or downloads a prebuilt app.
+
+```bash
+npx @hdminh/pet-runner doctor
+npx @hdminh/pet-runner setup
+npx @hdminh/pet-runner start
+```
+
+`setup` requires an interactive terminal and asks before each installer. macOS
+uses the system Command Line Tools prompt; Windows uses WinGet for approved
+prerequisites. Rust (`cargo` and `rustc`) is required on both platforms.
+
+To opt in to Agent Monitor configuration immediately after a macOS install,
+pass `--enable-agent-monitor`. PetRunner then opens the provider-selection UI;
+closing it or selecting no provider changes nothing. The flag is rejected on
+Windows and does not modify any provider configuration there.
+
 Standalone macOS menu-bar and Windows tray renderer for Codex-compatible custom
 pets. It reads `${CODEX_HOME:-~/.codex}/pets` without starting or connecting to
 Codex.
@@ -73,8 +93,8 @@ as a fallback, then resumes idle after the pointer settles.
 macOS:
 
 ```bash
-swift test
-PETRUNNER_RUN_INSTALLED_PET_TESTS=1 swift test --filter InstalledPetsIntegrationTests
+./script/test_macos.sh
+PETRUNNER_RUN_INSTALLED_PET_TESTS=1 ./script/test_macos.sh --filter InstalledPetsIntegrationTests
 ```
 
 Windows:
