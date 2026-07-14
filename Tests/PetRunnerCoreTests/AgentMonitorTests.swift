@@ -25,15 +25,52 @@ struct AgentMonitorTests {
         #expect(store.selected?.animation == .waiting)
     }
 
-    @Test func updatingSessionMovesItToMostRecentPosition() {
+    @Test func updatingSessionKeepsItsPositionAndTheCurrentSelection() {
         var store = AgentSessionStore()
         store.upsert(event(provider: .codex, id: "a", status: .working))
         store.upsert(event(provider: .claude, id: "b", status: .reviewing))
         store.upsert(event(provider: .cursor, id: "c", status: .finished))
+        store.select(at: 1)
         store.upsert(event(provider: .codex, id: "a", status: .failed))
 
-        #expect(store.entries.map(\.sessionID) == ["a", "c", "b"])
-        #expect(store.selected?.status == .failed)
+        #expect(store.entries.map(\.sessionID) == ["c", "b", "a"])
+        #expect(store.selected?.sessionID == "b")
+        #expect(store.entries.last?.status == .failed)
+        #expect(store.selectedIndex == 1)
+    }
+
+    @Test func newSessionMovesTheSelectedRailPositionButKeepsItsTextSelection() {
+        var store = AgentSessionStore()
+        store.upsert(event(provider: .codex, id: "a", status: .working))
+        store.upsert(event(provider: .claude, id: "b", status: .reviewing))
+        store.selectNext()
+        store.upsert(event(provider: .cursor, id: "c", status: .finished))
+
+        #expect(store.entries.map(\.sessionID) == ["c", "b", "a"])
+        #expect(store.selected?.sessionID == "a")
+        #expect(store.selected?.status == .working)
+        #expect(store.selectedIndex == 2)
+    }
+
+    @Test func retainingFiveSessionsEvictsTheOldestSession() {
+        var store = AgentSessionStore()
+        for index in 0..<5 {
+            store.upsert(event(provider: .codex, id: "session-\(index)", status: .working))
+        }
+        store.select(at: 4)
+        store.upsert(event(provider: .claude, id: "incoming", status: .reviewing))
+
+        #expect(store.entries.count == AgentSessionStore.maximumEntries)
+        #expect(store.entries.map(\.sessionID) == ["incoming", "session-4", "session-3", "session-2", "session-1"])
+        #expect(store.selected?.sessionID == "incoming")
+        #expect(store.selectedIndex == 0)
+    }
+
+    @Test func newSessionSelectsItWhenThereIsNoExistingSelection() {
+        var store = AgentSessionStore()
+        store.upsert(event(provider: .codex, id: "first", status: .working))
+
+        #expect(store.selected?.sessionID == "first")
         #expect(store.selectedIndex == 0)
     }
 
@@ -53,6 +90,7 @@ struct AgentMonitorTests {
             store.upsert(event(provider: .codex, id: id, status: .working))
         }
         let order = store.entries.map(\.sessionID)
+        store.select(at: 0)
 
         store.selectNext()
         #expect(store.selectedIndex == 1)
@@ -107,25 +145,13 @@ struct AgentMonitorTests {
         store.upsert(oldest)
         store.upsert(selected)
         store.upsert(newest)
-        store.selectNext()
+        store.select(at: 1)
 
         let removed = store.remove(newest.key)
 
         #expect(removed)
         #expect(store.selected?.sessionID == "selected")
         #expect(store.entries.map(\.sessionID) == ["selected", "oldest"])
-    }
-
-    @Test func newActivitySnapsSelectionBackToUpdatedTopSession() {
-        var store = AgentSessionStore()
-        store.upsert(event(provider: .codex, id: "a", status: .working))
-        store.upsert(event(provider: .claude, id: "b", status: .reviewing))
-        store.selectNext()
-        store.upsert(event(provider: .codex, id: "a", status: .finished))
-
-        #expect(store.entries.map(\.sessionID) == ["a", "b"])
-        #expect(store.selectedIndex == 0)
-        #expect(store.selected?.status == .finished)
     }
 
     @Test func everyStatusUsesExistingAnimationAndFixedText() {

@@ -189,15 +189,21 @@ public struct AgentSessionStore: Sendable {
     }
 
     public mutating func upsert(_ event: NormalizedAgentEvent) {
-        let existing = entries.first { $0.key == event.key }
-        let displayName = preferredDisplayName(existing: existing?.displayName, candidate: event.displayName)
-        let snapshot = AgentSessionSnapshot(key: event.key, status: event.status, displayName: displayName)
-        entries.removeAll { $0.key == event.key }
-        entries.insert(snapshot, at: 0)
-        if entries.count > Self.maximumEntries {
-            entries.removeLast(entries.count - Self.maximumEntries)
+        let selectedKey = selected?.key
+
+        if let index = entries.firstIndex(where: { $0.key == event.key }) {
+            let displayName = preferredDisplayName(existing: entries[index].displayName, candidate: event.displayName)
+            entries[index] = AgentSessionSnapshot(key: event.key, status: event.status, displayName: displayName)
+        } else {
+            entries.insert(AgentSessionSnapshot(key: event.key, status: event.status, displayName: event.displayName), at: 0)
+            if entries.count > Self.maximumEntries {
+                entries.removeLast()
+            }
         }
-        selectedIndex = 0
+
+        selectedIndex = selectedKey.flatMap { selectedKey in
+            entries.firstIndex { $0.key == selectedKey }
+        } ?? entries.firstIndex { $0.key == event.key } ?? 0
     }
 
     @discardableResult

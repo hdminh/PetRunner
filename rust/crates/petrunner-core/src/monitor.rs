@@ -245,17 +245,30 @@ impl AgentSessionStore {
     }
     pub fn upsert(&mut self, event: NormalizedAgentEvent) {
         let key = event.key();
-        let existing = self
-            .entries
-            .iter()
-            .find(|entry| entry.key == key)
-            .and_then(|entry| entry.display_name.clone());
-        let name = preferred_display_name(existing, event.display_name);
-        self.entries.retain(|entry| entry.key != key);
-        self.entries
-            .insert(0, AgentSessionSnapshot::new(key, event.status, name));
-        self.entries.truncate(Self::MAXIMUM_ENTRIES);
-        self.selected_index = 0;
+        let selected_key = self.selected().map(|entry| entry.key.clone());
+
+        if let Some(index) = self.entries.iter().position(|entry| entry.key == key) {
+            let display_name = preferred_display_name(
+                self.entries[index].display_name.clone(),
+                event.display_name,
+            );
+            self.entries[index] =
+                AgentSessionSnapshot::new(key.clone(), event.status, display_name);
+        } else {
+            self.entries.insert(
+                0,
+                AgentSessionSnapshot::new(key.clone(), event.status, event.display_name),
+            );
+
+            if self.entries.len() > Self::MAXIMUM_ENTRIES {
+                self.entries.pop();
+            }
+        }
+
+        self.selected_index = selected_key
+            .and_then(|selected| self.entries.iter().position(|entry| entry.key == selected))
+            .or_else(|| self.entries.iter().position(|entry| entry.key == key))
+            .unwrap_or(0);
     }
     pub fn set_display_name(&mut self, key: &AgentSessionKey, name: DisplayName) -> bool {
         let Some(index) = self.entries.iter().position(|entry| &entry.key == key) else {
@@ -932,7 +945,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn display_names_are_bounded_and_session_store_is_mru() {
+    fn display_names_are_bounded_and_new_sessions_are_mru() {
         let mut store = AgentSessionStore::default();
         store.upsert(NormalizedAgentEvent {
             provider: AgentProvider::Claude,
@@ -955,6 +968,66 @@ mod tests {
                 .count(),
             96
         );
+    }
+
+    #[test]
+    fn session_updates_stay_in_place_and_selection_follows_its_session() {
+        let mut store = AgentSessionStore::default();
+        let event =
+            |provider: AgentProvider, session_id: &str, status: AgentStatus| NormalizedAgentEvent {
+                provider,
+                session_id: session_id.to_owned(),
+                status,
+                display_name: None,
+            };
+
+        store.upsert(event(AgentProvider::Codex, "oldest", AgentStatus::Working));
+        store.upsert(event(
+            AgentProvider::Claude,
+            "selected",
+            AgentStatus::Reviewing,
+        ));
+        store.upsert(event(
+            AgentProvider::Cursor,
+            "newest",
+            AgentStatus::NeedsApproval,
+        ));
+        assert!(store.select(1));
+
+        store.upsert(event(
+            AgentProvider::Claude,
+            "selected",
+            AgentStatus::Finished,
+        ));
+
+        assert_eq!(
+            store
+                .entries()
+                .iter()
+                .map(|entry| entry.key.session_id.as_str())
+                .collect::<Vec<_>>(),
+            ["newest", "selected", "oldest"]
+        );
+        assert_eq!(store.selected_index(), 1);
+        assert_eq!(store.selected().unwrap().key.session_id, "selected");
+        assert_eq!(store.selected().unwrap().status, AgentStatus::Finished);
+
+        store.upsert(event(
+            AgentProvider::Codex,
+            "incoming",
+            AgentStatus::Working,
+        ));
+
+        assert_eq!(
+            store
+                .entries()
+                .iter()
+                .map(|entry| entry.key.session_id.as_str())
+                .collect::<Vec<_>>(),
+            ["incoming", "newest", "selected", "oldest"]
+        );
+        assert_eq!(store.selected_index(), 2);
+        assert_eq!(store.selected().unwrap().key.session_id, "selected");
     }
 
     #[test]
