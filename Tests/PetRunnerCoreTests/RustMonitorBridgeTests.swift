@@ -4,8 +4,13 @@ import Testing
 
 struct RustMonitorBridgeTests {
     @Test func validatesEnvelopeAndMaintainsMruStateThroughRust() {
-        let envelope = Data("{\"version\":1,\"token\":\"secret\",\"provider\":\"codex\",\"sessionId\":\"first\",\"status\":\"working\"}".utf8)
-        let event = RustMonitor.decodeEnvelope(envelope, token: "secret")
+        let envelope = AgentMonitorEnvelope(
+            token: "secret",
+            provider: .codex,
+            sessionID: "first",
+            status: .working
+        )
+        let event = RustMonitor.decodeEnvelope(try! JSONEncoder().encode(envelope), token: "secret")
         #expect(event?.sessionID == "first")
         #expect(event?.status == .working)
 
