@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -122,7 +123,9 @@ internal sealed class OverlayWindow : Window, IDisposable
         var local = args.GetPosition(this);
         if (!IsMouseCaptured)
         {
-            Cursor = local.X >= ActualWidth - 18 && local.Y >= ActualHeight - 18 ? Cursors.SizeNWSE : Cursors.Hand;
+            Cursor = local.X >= ActualWidth - 18 && local.Y >= ActualHeight - 18
+                ? System.Windows.Input.Cursors.SizeNWSE
+                : System.Windows.Input.Cursors.Hand;
             return;
         }
 
