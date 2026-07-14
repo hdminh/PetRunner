@@ -17,5 +17,5 @@ dotnet publish $App `
 $Exe = Join-Path $Output "PetRunner.exe"
 if (-not (Test-Path $Exe)) { throw "PetRunner.exe was not produced" }
 $Hash = (Get-FileHash $Exe -Algorithm SHA256).Hash.ToLowerInvariant()
-Set-Content -Path "$Exe.sha256" -Value "$Hash  PetRunner.exe" -Encoding ascii
+[System.IO.File]::WriteAllText("$Exe.sha256", "$Hash  PetRunner.exe`n", [System.Text.Encoding]::ASCII)
 Write-Output $Exe
