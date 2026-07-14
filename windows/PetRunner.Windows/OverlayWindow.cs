@@ -129,7 +129,7 @@ internal sealed class OverlayWindow : Window, IDisposable
         var pointer = PointerInDips();
         var dx = pointer.X - pointerStart.X;
         var dy = pointer.Y - pointerStart.Y;
-        moved = moved || Math.Hypot(dx, dy) >= 3;
+        moved = moved || Math.Sqrt(dx * dx + dy * dy) >= 3;
         if (resizing)
         {
             SetWidth(resizeStartWidth + dx);
@@ -167,7 +167,7 @@ internal sealed class OverlayWindow : Window, IDisposable
         {
             playback.Start(AnimationState.Jumping);
         }
-        else if (Math.Hypot(velocityX, velocityY) >= 120)
+        else if (Math.Sqrt(velocityX * velocityX + velocityY * velocityY) >= 120)
         {
             motion = new MotionState(Left, Top, velocityX, velocityY);
             UpdateMovementAnimation(velocityX, velocityX);

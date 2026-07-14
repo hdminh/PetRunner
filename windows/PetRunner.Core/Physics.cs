@@ -60,7 +60,8 @@ public static class PhysicsEngine
         var retention = Math.Pow(velocityRetentionPerSecond, dt);
         motion.VelocityX *= retention;
         motion.VelocityY *= retention;
-        if (Math.Hypot(motion.VelocityX, motion.VelocityY) < stopSpeed)
+        if (Math.Sqrt(
+                motion.VelocityX * motion.VelocityX + motion.VelocityY * motion.VelocityY) < stopSpeed)
         {
             motion.VelocityX = 0;
             motion.VelocityY = 0;

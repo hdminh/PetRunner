@@ -177,7 +177,7 @@ public static class LookDirection
 {
     public static int? FrameIndex(double dx, double dyUp, double deadzone = 24)
     {
-        if (Math.Hypot(dx, dyUp) < deadzone) return null;
+        if (Math.Sqrt(dx * dx + dyUp * dyUp) < deadzone) return null;
         var angle = Math.Atan2(dx, dyUp);
         if (angle < 0) angle += 2 * Math.PI;
         return (int)Math.Round(angle / (Math.PI / 8), MidpointRounding.AwayFromZero) % 16;
