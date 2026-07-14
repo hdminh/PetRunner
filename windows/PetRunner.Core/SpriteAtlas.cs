@@ -1,6 +1,4 @@
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
+using SkiaSharp;
 
 namespace PetRunner.Core;
 
@@ -8,10 +6,10 @@ public sealed class SpriteAtlas : IDisposable
 {
     public const int CellWidth = 192;
     public const int CellHeight = 208;
-    private readonly Image<Rgba32> image;
+    private readonly SKBitmap image;
     private readonly Dictionary<AtlasAddress, byte[]> cache = [];
 
-    private SpriteAtlas(Image<Rgba32> image, SpriteVersion version)
+    private SpriteAtlas(SKBitmap image, SpriteVersion version)
     {
         this.image = image;
         Version = version;
@@ -21,7 +19,7 @@ public sealed class SpriteAtlas : IDisposable
 
     public static SpriteAtlas Load(string path, SpriteVersion version)
     {
-        var image = Image.Load<Rgba32>(path);
+        var image = SKBitmap.Decode(path) ?? throw new InvalidDataException("atlas cannot be decoded");
         var expected = version.ExpectedSize();
         if (image.Width != expected.Width || image.Height != expected.Height)
         {
@@ -37,11 +35,19 @@ public sealed class SpriteAtlas : IDisposable
             throw new ArgumentOutOfRangeException(nameof(address));
         if (cache.TryGetValue(address, out var cached)) return cached;
 
-        using var frame = image.Clone(context => context.Crop(
-            new Rectangle(address.Column * CellWidth, address.Row * CellHeight, CellWidth, CellHeight)));
-        using var stream = new MemoryStream();
-        frame.SaveAsPng(stream);
-        var encoded = stream.ToArray();
+        using var frame = new SKBitmap(CellWidth, CellHeight, SKColorType.Rgba8888, SKAlphaType.Premul);
+        using (var canvas = new SKCanvas(frame))
+        {
+            var source = new SKRectI(
+                address.Column * CellWidth,
+                address.Row * CellHeight,
+                (address.Column + 1) * CellWidth,
+                (address.Row + 1) * CellHeight);
+            canvas.DrawBitmap(image, source, new SKRect(0, 0, CellWidth, CellHeight));
+        }
+        using var snapshot = SKImage.FromBitmap(frame);
+        using var data = snapshot.Encode(SKEncodedImageFormat.Png, 100);
+        var encoded = data.ToArray();
         cache[address] = encoded;
         return encoded;
     }

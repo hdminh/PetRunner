@@ -1,6 +1,5 @@
 using PetRunner.Core;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using SkiaSharp;
 
 namespace PetRunner.Tests;
 
@@ -34,8 +33,11 @@ internal static class PetLoaderTests
     private static void CreatePet(string root, string name, string manifest, int width, int height)
     {
         var directory = CreateManifest(root, name, manifest);
-        using var image = new Image<Rgba32>(width, height);
-        image.SaveAsPng(Path.Combine(directory, "spritesheet.webp"));
+        using var bitmap = new SKBitmap(width, height);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        using var stream = File.Create(Path.Combine(directory, "spritesheet.webp"));
+        data.SaveTo(stream);
     }
 
     private static string CreateManifest(string root, string name, string manifest)

@@ -1,5 +1,5 @@
 using System.Text.Json;
-using SixLabors.ImageSharp;
+using SkiaSharp;
 
 namespace PetRunner.Core;
 
@@ -64,12 +64,13 @@ public static class PetPackageLoader
             throw new InvalidDataException($"spritesheet extension {extension} is unsupported");
         if (!File.Exists(sheetPath)) throw new FileNotFoundException("spritesheet file is missing");
 
-        ImageInfo info;
+        SKImageInfo info;
         try
         {
-            info = Image.Identify(sheetPath) ?? throw new InvalidDataException("spritesheet cannot be decoded");
+            using var codec = SKCodec.Create(sheetPath) ?? throw new InvalidDataException("spritesheet cannot be decoded");
+            info = codec.Info;
         }
-        catch (UnknownImageFormatException error)
+        catch (Exception error) when (error is not InvalidDataException)
         {
             throw new InvalidDataException("spritesheet cannot be decoded", error);
         }
