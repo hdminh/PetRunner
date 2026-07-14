@@ -38,7 +38,9 @@ public enum AnimationState: String, CaseIterable {
 
     public var frameDurations: [TimeInterval] {
         switch self {
-        case .idle: [0.28, 0.11, 0.11, 0.14, 0.14, 0.32]
+        // Codex pets use a deliberately unhurried idle pass. Keep the six
+        // standard frames, but play each at one third of the former speed.
+        case .idle: [0.84, 0.33, 0.33, 0.42, 0.42, 0.96]
         case .runningRight, .runningLeft: Array(repeating: 0.12, count: 7) + [0.22]
         case .waving: Array(repeating: 0.14, count: 3) + [0.28]
         case .jumping: Array(repeating: 0.14, count: 4) + [0.28]
@@ -49,7 +51,9 @@ public enum AnimationState: String, CaseIterable {
         }
     }
 
-    public var isOneShot: Bool { self == .jumping }
+    public var cyclesBeforeReturningToIdle: Int? {
+        self == .jumping ? 3 : nil
+    }
 }
 
 public struct IdleAction: Equatable, Sendable {
@@ -64,41 +68,33 @@ public struct IdleAction: Equatable, Sendable {
 }
 
 public struct AnimationPlayback {
-    private enum IdlePhase {
-        case waiting
-        case playing
-    }
-
     public private(set) var state: AnimationState
     public private(set) var frameIndex: Int
     public private(set) var elapsedInFrame: TimeInterval
 
     private let idleActions: [IdleAction]
-    private let idleDelayProvider: () -> TimeInterval
     private let idleActionIndexProvider: (Int) -> Int
-    private var idlePhase: IdlePhase
-    private var idleWaitRemaining: TimeInterval
     private var idleActionColumns: [Int]
     private var idleActionPosition: Int
+    private var idlePauseRemaining: TimeInterval
+    private var completedStateCycles: Int
 
     public init(
         state: AnimationState = .idle,
         idleActions: [IdleAction] = [.standard],
-        idleDelayProvider: @escaping () -> TimeInterval = { Double.random(in: 5...10) },
         idleActionIndexProvider: @escaping (Int) -> Int = { Int.random(in: 0..<$0) }
     ) {
         self.state = state
         self.idleActions = idleActions.isEmpty ? [.standard] : idleActions
-        self.idleDelayProvider = idleDelayProvider
         self.idleActionIndexProvider = idleActionIndexProvider
         frameIndex = 0
         elapsedInFrame = 0
-        idlePhase = .waiting
-        idleWaitRemaining = 0
         idleActionColumns = []
         idleActionPosition = 0
+        idlePauseRemaining = 0
+        completedStateCycles = 0
         if state == .idle {
-            scheduleNextIdleAction()
+            beginIdleAction()
         }
     }
 
@@ -106,11 +102,10 @@ public struct AnimationPlayback {
         state = newState
         frameIndex = 0
         elapsedInFrame = 0
+        idlePauseRemaining = 0
+        completedStateCycles = 0
         if newState == .idle {
-            idlePhase = .waiting
-            idleActionColumns = []
-            idleActionPosition = 0
-            scheduleNextIdleAction()
+            beginIdleAction()
         }
     }
 
@@ -127,9 +122,12 @@ public struct AnimationPlayback {
             elapsedInFrame -= state.frameDurations[frameIndex]
             frameIndex += 1
             if frameIndex == state.frameDurations.count {
-                if state.isOneShot {
-                    start(.idle)
-                    return
+                if let cyclesBeforeReturningToIdle = state.cyclesBeforeReturningToIdle {
+                    completedStateCycles += 1
+                    if completedStateCycles == cyclesBeforeReturningToIdle {
+                        start(.idle)
+                        return
+                    }
                 }
                 frameIndex = 0
             }
@@ -140,35 +138,32 @@ public struct AnimationPlayback {
         var remaining = deltaTime
 
         while remaining > 1e-12 {
-            switch idlePhase {
-            case .waiting:
-                if remaining + 1e-12 < idleWaitRemaining {
-                    idleWaitRemaining -= remaining
+            if idlePauseRemaining > 0 {
+                if remaining + 1e-12 < idlePauseRemaining {
+                    idlePauseRemaining -= remaining
                     return
                 }
-                remaining = max(0, remaining - idleWaitRemaining)
+                remaining = max(0, remaining - idlePauseRemaining)
+                idlePauseRemaining = 0
                 beginIdleAction()
+                continue
+            }
 
-            case .playing:
-                let frameDuration = AnimationState.idle.frameDurations[frameIndex]
-                let timeToBoundary = frameDuration - elapsedInFrame
-                if remaining + 1e-12 < timeToBoundary {
-                    elapsedInFrame += remaining
-                    return
-                }
+            let frameDuration = AnimationState.idle.frameDurations[frameIndex]
+            let timeToBoundary = frameDuration - elapsedInFrame
+            if remaining + 1e-12 < timeToBoundary {
+                elapsedInFrame += remaining
+                return
+            }
 
-                remaining = max(0, remaining - timeToBoundary)
-                elapsedInFrame = 0
-                idleActionPosition += 1
-                if idleActionPosition == idleActionColumns.count {
-                    frameIndex = 0
-                    idlePhase = .waiting
-                    idleActionColumns = []
-                    idleActionPosition = 0
-                    scheduleNextIdleAction()
-                } else {
-                    frameIndex = idleActionColumns[idleActionPosition]
-                }
+            remaining = max(0, remaining - timeToBoundary)
+            elapsedInFrame = 0
+            idleActionPosition += 1
+            if idleActionPosition == idleActionColumns.count {
+                frameIndex = 0
+                idlePauseRemaining = 1
+            } else {
+                frameIndex = idleActionColumns[idleActionPosition]
             }
         }
     }
@@ -181,13 +176,6 @@ public struct AnimationPlayback {
         idleActionPosition = 0
         frameIndex = idleActionColumns[0]
         elapsedInFrame = 0
-        idlePhase = .playing
-        idleWaitRemaining = 0
-    }
-
-    private mutating func scheduleNextIdleAction() {
-        let requestedDelay = idleDelayProvider()
-        idleWaitRemaining = requestedDelay.isFinite ? min(max(requestedDelay, 5), 10) : 5
     }
 
     public var atlasAddress: AtlasAddress {

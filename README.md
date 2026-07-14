@@ -11,8 +11,12 @@ Standalone macOS menu-bar renderer for Codex-compatible custom pets. It reads
 
 The unsigned local app is staged at `dist/PetRunner.app`. Use the menu-bar paw
 icon to choose or reload pets, change size, or quit. Drag the pet to move it,
-throw it toward a screen edge, click it to jump, or drag its lower-right handle
-to resize. V2 pets look toward the pointer while idle.
+throw it toward a screen edge, hover or click it to jump, or drag its
+lower-right handle to resize. Idle uses the six standard frames at a calm,
+three-times-slower cadence, pausing for one second between each pass. Hover runs the three Codex
+jump cycles before returning to idle. V2 look-direction cells are reserved for
+a Computer Use cursor; this runner also uses recent physical pointer movement
+as a fallback, then resumes idle after the pointer settles.
 
 To load another directory during development:
 

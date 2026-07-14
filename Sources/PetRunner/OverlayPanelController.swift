@@ -23,6 +23,10 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
     private var resizeStartPointer: CGPoint?
     private var resizeStartWidth: CGFloat?
     private var interactionActive = false
+    private var lastPointerLocation: CGPoint?
+    private var lastPointerMovementTime: TimeInterval = -.infinity
+
+    private let physicalPointerLookDuration: TimeInterval = 0.6
 
     override init() {
         spriteView = SpriteView(frame: CGRect(x: 0, y: 0, width: 112, height: 121.33))
@@ -64,6 +68,8 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         self.pet = pet
         playback.start(.idle)
         motion = nil
+        lastPointerLocation = nil
+        lastPointerMovementTime = -.infinity
         resize(to: width, anchorTopLeft: false)
 
         let initial = savedOrigin ?? defaultOrigin(for: panel.frame.size)
@@ -101,6 +107,18 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
     func spriteViewDidClick(_ view: SpriteView) {
         motion = nil
         playback.start(.jumping)
+        renderCurrentFrame()
+    }
+
+    func spriteViewDidHover(_ view: SpriteView) {
+        guard !interactionActive, motion == nil, playback.state == .idle else { return }
+        playback.start(.jumping)
+        renderCurrentFrame()
+    }
+
+    func spriteViewDidEndHover(_ view: SpriteView) {
+        guard !interactionActive, motion == nil, playback.state == .jumping else { return }
+        playback.start(.idle)
         renderCurrentFrame()
     }
 
@@ -208,20 +226,29 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
 
     private func renderCurrentFrame() {
         guard let atlas, let pet else { return }
-        var address = playback.atlasAddress
-        if pet.version == .v2,
-           playback.state == .idle,
-           !interactionActive,
-           motion == nil {
-            let pointer = NSEvent.mouseLocation
-            let center = CGPoint(x: panel.frame.midX, y: panel.frame.midY)
-            let vector = CGVector(dx: pointer.x - center.x, dy: pointer.y - center.y)
-            if let index = LookDirection.frameIndex(vector: vector),
-               let lookAddress = LookDirection.atlasAddress(for: index) {
-                address = lookAddress
-            }
-        }
+        let address = recentPointerLookAddress(for: pet) ?? playback.atlasAddress
         spriteView.display(atlas.frame(at: address))
+    }
+
+    private func recentPointerLookAddress(for pet: PetDescriptor) -> AtlasAddress? {
+        guard pet.version == .v2,
+              playback.state == .idle,
+              !interactionActive,
+              motion == nil
+        else { return nil }
+
+        let pointer = NSEvent.mouseLocation
+        let now = ProcessInfo.processInfo.systemUptime
+        if pointer != lastPointerLocation {
+            lastPointerLocation = pointer
+            lastPointerMovementTime = now
+        }
+        guard now - lastPointerMovementTime <= physicalPointerLookDuration else { return nil }
+
+        let center = CGPoint(x: panel.frame.midX, y: panel.frame.midY)
+        let vector = CGVector(dx: pointer.x - center.x, dy: pointer.y - center.y)
+        guard let index = LookDirection.frameIndex(vector: vector) else { return nil }
+        return LookDirection.atlasAddress(for: index)
     }
 
     private func resize(to requestedWidth: CGFloat, anchorTopLeft: Bool) {

@@ -4,6 +4,8 @@ import PetRunnerCore
 @MainActor
 protocol SpriteViewDelegate: AnyObject {
     func spriteViewDidClick(_ view: SpriteView)
+    func spriteViewDidHover(_ view: SpriteView)
+    func spriteViewDidEndHover(_ view: SpriteView)
     func spriteView(_ view: SpriteView, dragDidBeginAt pointer: CGPoint)
     func spriteView(_ view: SpriteView, dragDidMoveTo pointer: CGPoint)
     func spriteView(_ view: SpriteView, dragDidEndWith velocity: CGVector)
@@ -84,9 +86,14 @@ final class SpriteView: NSView {
         }
     }
 
+    override func mouseEntered(with event: NSEvent) {
+        delegate?.spriteViewDidHover(self)
+    }
+
     override func mouseExited(with event: NSEvent) {
         showsResizeHandle = false
         needsDisplay = true
+        delegate?.spriteViewDidEndHover(self)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }

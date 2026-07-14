@@ -18,7 +18,9 @@ public static class AnimationContract
     private static readonly IReadOnlyDictionary<AnimationState, double[]> Durations =
         new Dictionary<AnimationState, double[]>
         {
-            [AnimationState.Idle] = [0.28, 0.11, 0.11, 0.14, 0.14, 0.32],
+            // Codex pets use a deliberately unhurried idle pass. Keep the six
+            // standard frames, but play each at one third of the former speed.
+            [AnimationState.Idle] = [0.84, 0.33, 0.33, 0.42, 0.42, 0.96],
             [AnimationState.RunningRight] = Frames(8, 0.12, 0.22),
             [AnimationState.RunningLeft] = Frames(8, 0.12, 0.22),
             [AnimationState.Waving] = Frames(4, 0.14, 0.28),
@@ -31,7 +33,8 @@ public static class AnimationContract
 
     public static int Row(AnimationState state) => (int)state;
     public static IReadOnlyList<double> FrameDurations(AnimationState state) => Durations[state];
-    public static bool IsOneShot(AnimationState state) => state == AnimationState.Jumping;
+    public static int? CyclesBeforeReturningToIdle(AnimationState state) =>
+        state == AnimationState.Jumping ? 3 : null;
 
     private static double[] Frames(int count, double regular, double last) =>
         Enumerable.Range(0, count).Select(index => index == count - 1 ? last : regular).ToArray();
@@ -45,29 +48,26 @@ public sealed record IdleAction(IReadOnlyList<int> Columns)
 public sealed class AnimationPlayback
 {
     private readonly IReadOnlyList<IdleAction> idleActions;
-    private readonly Func<double> idleDelayProvider;
     private readonly Func<int, int> idleActionIndexProvider;
     private IReadOnlyList<int> idleColumns = [];
     private int idlePosition;
-    private double idleWaitRemaining;
+    private double idlePauseRemaining;
+    private int completedStateCycles;
 
     public AnimationPlayback(
         AnimationState state = AnimationState.Idle,
         IReadOnlyList<IdleAction>? idleActions = null,
-        Func<double>? idleDelayProvider = null,
         Func<int, int>? idleActionIndexProvider = null)
     {
         State = state;
         this.idleActions = Normalize(idleActions);
-        this.idleDelayProvider = idleDelayProvider ?? (() => 5 + Random.Shared.NextDouble() * 5);
         this.idleActionIndexProvider = idleActionIndexProvider ?? Random.Shared.Next;
-        if (state == AnimationState.Idle) ScheduleIdle();
+        if (state == AnimationState.Idle) BeginIdleAction();
     }
 
     public AnimationState State { get; private set; }
     public int FrameIndex { get; private set; }
     public double ElapsedInFrame { get; private set; }
-    public bool IsIdleActionPlaying { get; private set; }
     public AtlasAddress Address => new(AnimationContract.Row(State), FrameIndex);
 
     public void Start(AnimationState state)
@@ -75,8 +75,9 @@ public sealed class AnimationPlayback
         State = state;
         FrameIndex = 0;
         ElapsedInFrame = 0;
-        IsIdleActionPlaying = false;
-        if (state == AnimationState.Idle) ScheduleIdle();
+        idlePauseRemaining = 0;
+        completedStateCycles = 0;
+        if (state == AnimationState.Idle) BeginIdleAction();
     }
 
     public void Advance(double deltaTime)
@@ -95,10 +96,15 @@ public sealed class AnimationPlayback
             ElapsedInFrame -= durations[FrameIndex];
             FrameIndex++;
             if (FrameIndex != durations.Count) continue;
-            if (AnimationContract.IsOneShot(State))
+            var cyclesBeforeReturningToIdle = AnimationContract.CyclesBeforeReturningToIdle(State);
+            if (cyclesBeforeReturningToIdle is not null)
             {
-                Start(AnimationState.Idle);
-                return;
+                completedStateCycles++;
+                if (completedStateCycles == cyclesBeforeReturningToIdle.Value)
+                {
+                    Start(AnimationState.Idle);
+                    return;
+                }
             }
             FrameIndex = 0;
         }
@@ -109,14 +115,15 @@ public sealed class AnimationPlayback
         var remaining = deltaTime;
         while (remaining > 1e-12)
         {
-            if (!IsIdleActionPlaying)
+            if (idlePauseRemaining > 0)
             {
-                if (remaining + 1e-12 < idleWaitRemaining)
+                if (remaining + 1e-12 < idlePauseRemaining)
                 {
-                    idleWaitRemaining -= remaining;
+                    idlePauseRemaining -= remaining;
                     return;
                 }
-                remaining = Math.Max(0, remaining - idleWaitRemaining);
+                remaining = Math.Max(0, remaining - idlePauseRemaining);
+                idlePauseRemaining = 0;
                 BeginIdleAction();
                 continue;
             }
@@ -134,8 +141,7 @@ public sealed class AnimationPlayback
             if (idlePosition == idleColumns.Count)
             {
                 FrameIndex = 0;
-                IsIdleActionPlaying = false;
-                ScheduleIdle();
+                idlePauseRemaining = 1;
             }
             else
             {
@@ -152,14 +158,6 @@ public sealed class AnimationPlayback
         idlePosition = 0;
         FrameIndex = idleColumns[0];
         ElapsedInFrame = 0;
-        IsIdleActionPlaying = true;
-        idleWaitRemaining = 0;
-    }
-
-    private void ScheduleIdle()
-    {
-        var requested = idleDelayProvider();
-        idleWaitRemaining = double.IsFinite(requested) ? Math.Clamp(requested, 5, 10) : 5;
     }
 
     private static IReadOnlyList<IdleAction> Normalize(IReadOnlyList<IdleAction>? actions)

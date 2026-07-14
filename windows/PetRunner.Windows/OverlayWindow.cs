@@ -32,6 +32,10 @@ internal sealed class OverlayWindow : Window, IDisposable
     private double previousMoveTime;
     private double velocityX;
     private double velocityY;
+    private System.Drawing.Point? lastPointerScreenPosition;
+    private double lastPointerMovementTime = double.NegativeInfinity;
+
+    private const double PhysicalPointerLookDuration = 0.6;
 
     public OverlayWindow()
     {
@@ -46,6 +50,8 @@ internal sealed class OverlayWindow : Window, IDisposable
         MouseLeftButtonDown += OnPointerDown;
         MouseMove += OnPointerMove;
         MouseLeftButtonUp += OnPointerUp;
+        MouseEnter += OnPointerEnter;
+        MouseLeave += OnPointerLeave;
         timer.Tick += (_, _) => Tick();
         timer.Start();
     }
@@ -59,6 +65,8 @@ internal sealed class OverlayWindow : Window, IDisposable
         pet = descriptor;
         playback.Start(AnimationState.Idle);
         motion = null;
+        lastPointerScreenPosition = null;
+        lastPointerMovementTime = double.NegativeInfinity;
         SetWidth(width);
         if (!IsVisible) Show();
         if (savedPosition is { } saved)
@@ -155,6 +163,20 @@ internal sealed class OverlayWindow : Window, IDisposable
         Render();
     }
 
+    private void OnPointerEnter(object sender, System.Windows.Input.MouseEventArgs args)
+    {
+        if (interacting || motion is not null || playback.State != AnimationState.Idle) return;
+        playback.Start(AnimationState.Jumping);
+        Render();
+    }
+
+    private void OnPointerLeave(object sender, System.Windows.Input.MouseEventArgs args)
+    {
+        if (interacting || motion is not null || playback.State != AnimationState.Jumping) return;
+        playback.Start(AnimationState.Idle);
+        Render();
+    }
+
     private void OnPointerUp(object sender, MouseButtonEventArgs args)
     {
         ReleaseMouseCapture();
@@ -226,20 +248,30 @@ internal sealed class OverlayWindow : Window, IDisposable
     private void Render()
     {
         if (atlas is null || pet is null) return;
-        var address = playback.Address;
-        if (pet.Version == SpriteVersion.V2 &&
-            playback.State == AnimationState.Idle &&
-            !playback.IsIdleActionPlaying &&
-            !interacting &&
-            motion is null)
-        {
-            var pointer = PointerInDips();
-            var direction = LookDirection.FrameIndex(
-                pointer.X - (Left + Width / 2),
-                (Top + Height / 2) - pointer.Y);
-            if (direction is not null) address = LookDirection.Address(direction.Value);
-        }
+        var address = RecentPointerLookAddress() ?? playback.Address;
         sprite.Source = Bitmap(atlas.FramePng(address));
+    }
+
+    private AtlasAddress? RecentPointerLookAddress()
+    {
+        if (pet?.Version != SpriteVersion.V2 ||
+            playback.State != AnimationState.Idle ||
+            interacting ||
+            motion is not null) return null;
+
+        var pointerScreenPosition = Forms.Cursor.Position;
+        if (lastPointerScreenPosition is null || !pointerScreenPosition.Equals(lastPointerScreenPosition.Value))
+        {
+            lastPointerScreenPosition = pointerScreenPosition;
+            lastPointerMovementTime = clock.Elapsed.TotalSeconds;
+        }
+        if (clock.Elapsed.TotalSeconds - lastPointerMovementTime > PhysicalPointerLookDuration) return null;
+
+        var pointer = PointerInDips();
+        var direction = LookDirection.FrameIndex(
+            pointer.X - (Left + Width / 2),
+            (Top + Height / 2) - pointer.Y);
+        return direction is null ? null : LookDirection.Address(direction.Value);
     }
 
     private static BitmapImage Bitmap(byte[] png)
