@@ -7,6 +7,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     var onSelectPet: ((String) -> Void)?
     var onSelectSize: ((CGFloat) -> Void)?
     var onReload: (() -> Void)?
+    var onToggleMonitor: (() -> Void)?
     var onQuit: (() -> Void)?
 
     private let statusItem: NSStatusItem
@@ -15,6 +16,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private var failures: [PetFailure] = []
     private var selectedID: String?
     private var selectedWidth: CGFloat = 112
+    private var monitorEnabled = false
     private var petSubmenu: NSMenu?
     private var previewView: PetPreviewMenuView?
     private var thumbnailCache: [ThumbnailKey: NSImage] = [:]
@@ -43,12 +45,14 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         pets: [PetDescriptor],
         failures: [PetFailure],
         selectedID: String?,
-        width: CGFloat
+        width: CGFloat,
+        monitorEnabled: Bool = false
     ) {
         self.pets = pets
         self.failures = failures
         self.selectedID = selectedID
         selectedWidth = width
+        self.monitorEnabled = monitorEnabled
         let activeKeys = Set(pets.map(thumbnailKey(for:)))
         thumbnailCache = thumbnailCache.filter { activeKeys.contains($0.key) }
         rebuildMenu()
@@ -83,6 +87,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         let sizeItem = NSMenuItem(title: "Size", action: nil, keyEquivalent: "")
         sizeItem.submenu = sizeMenu
         menu.addItem(sizeItem)
+
+        let monitor = NSMenuItem(title: monitorEnabled ? "Disable Agent Monitor" : "Enable Agent Monitor", action: #selector(toggleMonitor), keyEquivalent: "")
+        monitor.target = self
+        monitor.state = monitorEnabled ? .on : .off
+        menu.addItem(monitor)
 
         if !failures.isEmpty {
             let errorMenu = NSMenu(title: "Unavailable Pets")
@@ -201,6 +210,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     @objc private func reloadPets() { onReload?() }
+    @objc private func toggleMonitor() { onToggleMonitor?() }
     @objc private func quitApp() { onQuit?() }
 }
 

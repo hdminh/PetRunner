@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import PetRunnerCore
 
 struct PetRunnerPreferences {
     private enum Key {
@@ -8,6 +9,9 @@ struct PetRunnerPreferences {
         static let originX = "originX"
         static let originY = "originY"
         static let hasOrigin = "hasOrigin"
+        static let monitorEnabled = "monitorEnabled"
+        static let monitorProviders = "monitorProviders"
+        static let monitorBubbleCollapsed = "monitorBubbleCollapsed"
     }
 
     private let defaults: UserDefaults
@@ -46,5 +50,20 @@ struct PetRunnerPreferences {
             defaults.set(newValue.y, forKey: Key.originY)
             defaults.set(true, forKey: Key.hasOrigin)
         }
+    }
+
+    var monitorEnabled: Bool {
+        get { defaults.bool(forKey: Key.monitorEnabled) }
+        nonmutating set { defaults.set(newValue, forKey: Key.monitorEnabled) }
+    }
+
+    var monitorProviders: [AgentProvider] {
+        get { (defaults.stringArray(forKey: Key.monitorProviders) ?? []).compactMap(AgentProvider.init(rawValue:)) }
+        nonmutating set { defaults.set(newValue.map(\.rawValue), forKey: Key.monitorProviders) }
+    }
+
+    var monitorBubbleCollapsed: Bool {
+        get { defaults.bool(forKey: Key.monitorBubbleCollapsed) }
+        nonmutating set { defaults.set(newValue, forKey: Key.monitorBubbleCollapsed) }
     }
 }
