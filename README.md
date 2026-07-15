@@ -82,3 +82,7 @@ Windows:
 ```powershell
 dotnet run --project windows\PetRunner.Tests\PetRunner.Tests.csproj
 ```
+
+## License
+
+PetRunner is available under the [MIT License](LICENSE).
