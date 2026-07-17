@@ -28,6 +28,16 @@ struct AnimationTests {
         #expect(playback.frameIndex == 0)
     }
 
+    @Test func autonomousOneShotAnimationsReturnToIdleAtTheirConfiguredCycles() {
+        for (state, cycles) in [(AnimationState.waving, 2), (.failed, 1)] {
+            var playback = AnimationPlayback()
+            playback.start(state)
+            let cycleDuration = state.frameDurations.reduce(0, +)
+            playback.advance(by: cycleDuration * Double(cycles))
+            #expect(playback.state == .idle)
+        }
+    }
+
     @Test func idleStartsImmediately() {
         var playback = AnimationPlayback()
         playback.advance(by: AnimationState.idle.frameDurations[0])

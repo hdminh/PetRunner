@@ -5,6 +5,21 @@ public enum ThoughtBubbleSide: String, Sendable {
     case below
 }
 
+public struct SessionBubbleContent: Equatable, Sendable {
+    public let modelTitle: String?
+    public let primaryText: String
+    public let detailRows: [String]
+
+    public init(entry: AgentSessionSnapshot, visibleFields: [MonitorBubbleField]) {
+        modelTitle = visibleFields.contains(.model) ? entry.model?.value.uppercased() : nil
+        primaryText = visibleFields.contains(.job) ? entry.activity?.value ?? entry.displayText : entry.displayText
+        detailRows = [
+            visibleFields.contains(.sessionName) ? entry.sessionName?.value : nil,
+            visibleFields.contains(.cost) ? entry.estimatedCost?.displayText : nil,
+        ].compactMap { $0 }
+    }
+}
+
 public struct SessionBubbleLayout: Sendable {
     public static let width: CGFloat = 292
     public static let expandedContentSize = CGSize(width: width, height: 92)
@@ -15,19 +30,22 @@ public struct SessionBubbleLayout: Sendable {
     public let detailLineCount: Int
     public let side: ThoughtBubbleSide
     public let isCollapsed: Bool
+    public let tailAnchorX: CGFloat?
 
     public init(
         sessionCount: Int,
         selectedIndex: Int = 0,
         detailLineCount: Int = 0,
         side: ThoughtBubbleSide = .above,
-        isCollapsed: Bool
+        isCollapsed: Bool,
+        tailAnchorX: CGFloat? = nil
     ) {
         self.sessionCount = max(sessionCount, 0)
         self.selectedIndex = min(max(selectedIndex, 0), max(sessionCount - 1, 0))
-        self.detailLineCount = min(max(detailLineCount, 0), MonitorBubbleField.allCases.count)
+        self.detailLineCount = min(max(detailLineCount, 0), MonitorBubbleField.allCases.count + 1)
         self.side = side
         self.isCollapsed = isCollapsed
+        self.tailAnchorX = tailAnchorX
     }
 
     public var indicatorIndices: [Int] {
@@ -37,7 +55,7 @@ public struct SessionBubbleLayout: Sendable {
         return Array(start..<(start + count))
     }
 
-    public var bubbleHeight: CGFloat { 72 + CGFloat(detailLineCount * 16) }
+    public var bubbleHeight: CGFloat { 46 + CGFloat(detailLineCount * 16) }
 
     public var contentSize: CGSize {
         if isCollapsed { return CGSize(width: 24, height: 18 + CGFloat(indicatorIndices.count * 14)) }
@@ -52,28 +70,55 @@ public struct SessionBubbleLayout: Sendable {
     }
 
     public var headerFrame: CGRect { CGRect(x: bubbleFrame.minX + 2, y: bubbleFrame.maxY - 22, width: bubbleFrame.width - 4, height: 20) }
-    public var metadataFrame: CGRect { CGRect(x: bubbleFrame.minX + 12, y: bubbleFrame.minY + 24, width: bubbleFrame.width - 62, height: bubbleFrame.height - 50) }
-    public var previousControlFrame: CGRect { CGRect(x: bubbleFrame.maxX - 42, y: bubbleFrame.minY + 8, width: 14, height: 14) }
-    public var nextControlFrame: CGRect { CGRect(x: bubbleFrame.maxX - 24, y: bubbleFrame.minY + 8, width: 14, height: 14) }
-    public var collapseControlFrame: CGRect { CGRect(x: bubbleFrame.maxX - 22, y: bubbleFrame.maxY - 20, width: 16, height: 16) }
+    public var metadataFrame: CGRect { CGRect(x: bubbleFrame.minX + 12, y: bubbleFrame.minY + 10, width: bubbleFrame.width - 62, height: bubbleFrame.height - 36) }
+    public var sessionPositionFrame: CGRect {
+        let text = "\(selectedIndex + 1)/\(max(sessionCount, 1))"
+        let width = CGFloat(text.count * 7 - 2)
+        return CGRect(x: bubbleFrame.maxX - 6 - width, y: headerFrame.minY + 8, width: width, height: 7)
+    }
+    public var previousControlFrame: CGRect { CGRect(x: nextControlFrame.minX - 18, y: headerFrame.midY - 8, width: 16, height: 16) }
+    public var nextControlFrame: CGRect { CGRect(x: sessionPositionFrame.minX - 20, y: headerFrame.midY - 8, width: 16, height: 16) }
+    public var collapseControlFrame: CGRect { CGRect(x: bubbleFrame.minX + 6, y: bubbleFrame.maxY - 20, width: 16, height: 16) }
     public var expandControlFrame: CGRect { CGRect(x: 2, y: contentSize.height - 18, width: 20, height: 18) }
 
-    public func dotFrames() -> [CGRect] {
-        let centerX = bubbleFrame.minX + 18
+    public func speechTailFrames() -> [CGRect] {
+        let centerX = speechTailCenterX
         switch side {
         case .above:
             return [
-                CGRect(x: centerX, y: 3, width: 3, height: 3),
-                CGRect(x: centerX + 4, y: 8, width: 5, height: 5),
-                CGRect(x: centerX + 10, y: 14, width: 7, height: 7),
+                CGRect(x: centerX - 10, y: bubbleFrame.minY - 2, width: 20, height: 4),
+                CGRect(x: centerX - 10, y: bubbleFrame.minY - 10, width: 16, height: 8),
+                CGRect(x: centerX - 10, y: bubbleFrame.minY - 20, width: 8, height: 12),
             ]
         case .below:
             return [
-                CGRect(x: centerX + 10, y: bubbleFrame.maxY - 1, width: 7, height: 7),
-                CGRect(x: centerX + 4, y: bubbleFrame.maxY + 8, width: 5, height: 5),
-                CGRect(x: centerX, y: bubbleFrame.maxY + 16, width: 3, height: 3),
+                CGRect(x: centerX - 10, y: bubbleFrame.maxY - 2, width: 20, height: 4),
+                CGRect(x: centerX - 10, y: bubbleFrame.maxY + 2, width: 16, height: 8),
+                CGRect(x: centerX - 10, y: bubbleFrame.maxY + 8, width: 8, height: 12),
             ]
         }
+    }
+
+    public func speechTailInteriorFrames() -> [CGRect] {
+        let centerX = speechTailCenterX
+        switch side {
+        case .above:
+            return [
+                CGRect(x: centerX - 8, y: bubbleFrame.minY - 2, width: 16, height: 4),
+                CGRect(x: centerX - 8, y: bubbleFrame.minY - 10, width: 12, height: 8),
+                CGRect(x: centerX - 8, y: bubbleFrame.minY - 18, width: 4, height: 10),
+            ]
+        case .below:
+            return [
+                CGRect(x: centerX - 8, y: bubbleFrame.maxY - 2, width: 16, height: 4),
+                CGRect(x: centerX - 8, y: bubbleFrame.maxY + 2, width: 12, height: 8),
+                CGRect(x: centerX - 8, y: bubbleFrame.maxY + 8, width: 4, height: 10),
+            ]
+        }
+    }
+
+    private var speechTailCenterX: CGFloat {
+        min(max(tailAnchorX ?? bubbleFrame.midX, bubbleFrame.minX + 10), bubbleFrame.maxX - 10)
     }
 
     public func indicatorFrame(at index: Int) -> CGRect {
@@ -81,7 +126,12 @@ public struct SessionBubbleLayout: Sendable {
         if isCollapsed {
             return CGRect(x: 4, y: contentSize.height - 32 - CGFloat(index * 14), width: 16, height: 12)
         }
-        return CGRect(x: bubbleFrame.maxX - 22, y: bubbleFrame.maxY - 46 - CGFloat(index * 9), width: 14, height: 6)
+        return CGRect(
+            x: sessionPositionFrame.maxX - 14,
+            y: headerFrame.minY - 8 - CGFloat(index * 9),
+            width: 14,
+            height: 6
+        )
     }
 
     public static func preferredSide(petFrame: CGRect, visibleFrame: CGRect, contentSize: CGSize) -> ThoughtBubbleSide {

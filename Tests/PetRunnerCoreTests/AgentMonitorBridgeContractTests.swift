@@ -17,7 +17,7 @@ struct AgentMonitorBridgeContractTests {
         let data = try JSONEncoder().encode(envelope)
 
         let event = try AgentMonitorEnvelope.decode(data, expectedToken: "token")
-        #expect(event == NormalizedAgentEvent(provider: .codex, sessionID: "session", status: .working, model: model, activity: activity))
+        #expect(event == NormalizedAgentEvent(provider: .codex, sessionID: "session", status: .working, model: model, activity: activity, source: .unknown))
         #expect(String(data: data, encoding: .utf8)?.contains("gpt-5.2-codex") == true)
         #expect(String(data: data, encoding: .utf8)?.contains("Reading server.ts") == true)
         #expect(String(data: data, encoding: .utf8)?.contains("file_path") == false)
@@ -31,6 +31,7 @@ struct AgentMonitorBridgeContractTests {
 
         #expect(event.activity == nil)
         #expect(event.scope == .primary)
+        #expect(event.source == .unknown)
     }
 
     @Test func rejectsInvalidEnvelopeInputs() throws {
@@ -43,7 +44,7 @@ struct AgentMonitorBridgeContractTests {
             try AgentMonitorEnvelope(token: "token", provider: .cursor, sessionID: " ", status: .finished).validated(expectedToken: "token")
         }
         #expect(throws: AgentMonitorBridgeError.unsupportedVersion) {
-            try AgentMonitorEnvelope(version: 4, token: "token", provider: .cursor, sessionID: "session", status: .finished).validated(expectedToken: "token")
+            try AgentMonitorEnvelope(version: 5, token: "token", provider: .cursor, sessionID: "session", status: .finished).validated(expectedToken: "token")
         }
         #expect(throws: AgentMonitorBridgeError.oversizedEnvelope) {
             try AgentMonitorEnvelope.decode(Data(repeating: 0, count: AgentMonitorEnvelope.maximumBytes + 1), expectedToken: "token")
@@ -79,5 +80,23 @@ struct AgentMonitorBridgeContractTests {
         #expect(event.key.scope == .subagent(agentID: "child"))
         #expect(event.agentType?.value == "Explore")
         #expect(event.lifecycle == .finished)
+    }
+
+    @Test func roundTripsEventSourceInProtocolFourAndDefaultsOlderProtocolsToUnknown() throws {
+        let envelope = AgentMonitorEnvelope(
+            token: "token",
+            provider: .cursor,
+            sessionID: "session",
+            status: .working,
+            source: .subagentLifecycle
+        )
+
+        let event = try AgentMonitorEnvelope.decode(JSONEncoder().encode(envelope), expectedToken: "token")
+        #expect(event.source == .subagentLifecycle)
+
+        for version in 1...3 {
+            let legacy = Data("{\"version\":\(version),\"token\":\"token\",\"provider\":\"cursor\",\"sessionID\":\"session\",\"status\":\"working\"}".utf8)
+            #expect(try AgentMonitorEnvelope.decode(legacy, expectedToken: "token").source == .unknown)
+        }
     }
 }

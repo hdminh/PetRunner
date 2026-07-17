@@ -45,6 +45,19 @@ struct AgentMonitorRecoveryJournalTests {
         #expect(String(data: data, encoding: .utf8)?.contains("prompt") == false)
     }
 
+    @Test func preservesEventSourceAndRemovesARejectedRecord() throws {
+        let url = temporaryJournalURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let journal = AgentMonitorRecoveryJournal(url: url)
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        let worker = NormalizedAgentEvent(provider: .cursor, sessionID: "worker", status: .working, source: .tool)
+
+        try journal.record(worker, at: start)
+        #expect(try journal.recoveredEvents(at: start).first?.source == .tool)
+        try journal.remove(worker.key)
+        #expect(try journal.recoveredEvents(at: start).isEmpty)
+    }
+
     @Test func treatsMalformedOrNonPrivateJournalsAsEmpty() throws {
         let url = temporaryJournalURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }

@@ -122,7 +122,10 @@ enum AgentMonitorHookRunner {
             activity: normalized.activity,
             scope: normalized.scope,
             agentType: normalized.agentType,
-            lifecycle: normalized.lifecycle
+            lifecycle: normalized.lifecycle,
+            source: normalized.source,
+            sessionName: normalized.sessionName,
+            estimatedCost: normalized.estimatedCost
         )
         guard let data = try? JSONEncoder().encode(envelope), let port = NWEndpoint.Port(rawValue: descriptor.port) else { return 0 }
         var length = UInt32(data.count).bigEndian

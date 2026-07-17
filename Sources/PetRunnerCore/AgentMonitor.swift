@@ -345,6 +345,17 @@ public enum AgentSessionLifecycle: String, Codable, Equatable, Sendable {
     case finished
 }
 
+/// Identifies the provider hook category that produced an event. This lets the
+/// session store reject Cursor worker tool events that cannot be linked to a
+/// user-submitted conversation.
+public enum AgentSessionEventSource: String, Codable, Equatable, Sendable {
+    case unknown
+    case prompt
+    case tool
+    case terminal
+    case subagentLifecycle
+}
+
 public enum AgentSessionExpiryPolicy {
     public static let primaryGracePeriod: TimeInterval = 5
     public static let subagentGracePeriod: TimeInterval = 2
@@ -366,6 +377,7 @@ public struct NormalizedAgentEvent: Equatable, Sendable {
     public let scope: AgentSessionScope
     public let agentType: AgentSubagentType?
     public let lifecycle: AgentSessionLifecycle
+    public let source: AgentSessionEventSource
     public let sessionName: AgentSessionName?
     public let estimatedCost: AgentSessionEstimatedCost?
 
@@ -378,6 +390,7 @@ public struct NormalizedAgentEvent: Equatable, Sendable {
         scope: AgentSessionScope = .primary,
         agentType: AgentSubagentType? = nil,
         lifecycle: AgentSessionLifecycle = .updated,
+        source: AgentSessionEventSource = .unknown,
         sessionName: AgentSessionName? = nil,
         estimatedCost: AgentSessionEstimatedCost? = nil
     ) {
@@ -389,6 +402,7 @@ public struct NormalizedAgentEvent: Equatable, Sendable {
         self.scope = scope
         self.agentType = agentType
         self.lifecycle = lifecycle
+        self.source = source
         self.sessionName = sessionName
         self.estimatedCost = estimatedCost
     }
@@ -442,6 +456,14 @@ public struct AgentSessionStore: Sendable {
     public var selected: AgentSessionSnapshot? {
         guard entries.indices.contains(selectedIndex) else { return nil }
         return entries[selectedIndex]
+    }
+
+    /// Cursor does not identify tool events emitted by subagents. Only tool
+    /// updates for a primary session first observed from a prompt are safe to
+    /// display; otherwise a completed worker can leave an orphaned bubble.
+    public func accepts(_ event: NormalizedAgentEvent) -> Bool {
+        guard event.provider == .cursor, event.source == .tool else { return true }
+        return entries.contains { $0.key == event.key && $0.key.scope == .primary }
     }
 
     @discardableResult

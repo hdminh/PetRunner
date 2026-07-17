@@ -10,8 +10,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let monitorBridge = AgentMonitorBridge()
     private var monitorStore = AgentSessionStore()
     private var terminalSessionExpiry: [AgentSessionKey: DispatchWorkItem] = [:]
+    private var historyStore: AgentSessionHistoryStore?
+    private var historyError: String?
     private let sessionBubble = SessionBubblePanelController()
     private var monitorSetup: MonitorSetupWindowController?
+    private var dashboard: DashboardWindowController?
     private var statusMenu: StatusMenuController?
     private var petsDirectory: URL!
     private var pets: [PetDescriptor] = []
@@ -21,14 +24,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         petsDirectory = resolvePetsDirectory()
         preferences.migrateLegacyMonitorProviderIfNeeded()
+        configureHistoryStore()
 
         let menu = StatusMenuController()
         menu.onSelectPet = { [weak self] id in self?.selectPet(id: id) }
         menu.onSelectSize = { [weak self] width in self?.selectSize(width) }
         menu.onReload = { [weak self] in self?.reloadPets() }
+        menu.onOpenDashboard = { [weak self] in self?.openDashboard() }
         menu.onToggleMonitor = { [weak self] in self?.toggleMonitor() }
         menu.onConfigureMonitor = { [weak self] in self?.presentMonitorSetup() }
         menu.onRepairMonitor = { [weak self] in self?.repairMonitorHooks() }
+        menu.onToggleAutonomy = { [weak self] in self?.toggleAutonomy() }
         menu.onQuit = { NSApp.terminate(nil) }
         statusMenu = menu
 
@@ -42,6 +48,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sessionBubble.onCollapse = { [weak self] in self?.setMonitorBubbleCollapsed(true) }
         sessionBubble.onExpand = { [weak self] in self?.setMonitorBubbleCollapsed(false) }
         overlay.onFrameChanged = { [weak self] _ in self?.refreshMonitorPresentation() }
+        overlay.setAutonomyEnabled(preferences.autonomyEnabled)
+        overlay.setAutonomyConfiguration(preferences.autonomyConfiguration)
         reloadPets()
         if preferences.monitorEnabled, preferences.monitorProvider != nil {
             do {
@@ -125,8 +133,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             failures: failures,
             selectedID: preferences.selectedPetID,
             width: preferences.petWidth,
-            monitorEnabled: preferences.monitorEnabled
+            monitorEnabled: preferences.monitorEnabled,
+            autonomyEnabled: preferences.autonomyEnabled
         )
+        dashboard?.refreshPetControls()
     }
 
     private func toggleMonitor() {
@@ -200,12 +210,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startMonitorBridge() throws {
         monitorBridge.onEvent = { [weak self] event in
             guard let self, MonitorEventFilter(selectedProvider: self.preferences.monitorProvider).accepts(event) else { return }
+            guard self.monitorStore.accepts(event) else {
+                try? AgentMonitorRecoveryJournal(url: AgentMonitorBridge.recoveryJournalURL).remove(event.key)
+                return
+            }
+            let archived = self.recordHistory(event)
             self.terminalSessionExpiry.removeValue(forKey: event.key)?.cancel()
             let changed = self.monitorStore.upsert(event)
             if event.status == .finished || event.status == .failed {
                 self.expireTerminalSession(event.key)
             }
             if changed { self.refreshMonitorPresentation() }
+            if archived { self.dashboard?.refreshHistory() }
         }
         try monitorBridge.start()
     }
@@ -214,6 +230,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let journal = AgentMonitorRecoveryJournal(url: AgentMonitorBridge.recoveryJournalURL)
         guard let events = try? journal.recoveredEvents(), !events.isEmpty else { return }
         for event in events where event.provider == preferences.monitorProvider {
+            guard monitorStore.accepts(event) else {
+                try? journal.remove(event.key)
+                continue
+            }
             _ = monitorStore.upsert(event)
         }
         _ = monitorStore.select(at: 0)
@@ -233,6 +253,77 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setMonitorBubbleCollapsed(_ isCollapsed: Bool) {
         preferences.monitorBubbleCollapsed = isCollapsed
         refreshMonitorPresentation()
+    }
+
+    private func toggleAutonomy() {
+        preferences.autonomyEnabled.toggle()
+        overlay.setAutonomyEnabled(preferences.autonomyEnabled)
+        refreshMenu()
+    }
+
+    private func setAutonomyConfiguration(_ configuration: AutonomyConfiguration) {
+        preferences.autonomyConfiguration = configuration
+        overlay.setAutonomyConfiguration(configuration)
+        refreshMenu()
+    }
+
+    private func resetPetPosition() {
+        overlay.resetPositionToDefault()
+        dashboard?.refreshPetControls()
+    }
+
+    private func configureHistoryStore() {
+        do {
+            historyStore = try AgentSessionHistoryStore(
+                url: AgentMonitorBridge.runtimeDirectoryURL.appendingPathComponent("session-history.sqlite", isDirectory: false)
+            )
+            historyError = nil
+        } catch {
+            historyStore = nil
+            historyError = error.localizedDescription
+            logger.error("Failed to open session history: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func recordHistory(_ event: NormalizedAgentEvent) -> Bool {
+        guard let historyStore else { return false }
+        do {
+            return try historyStore.record(event)
+        } catch {
+            historyError = error.localizedDescription
+            logger.error("Failed to record session history: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+    }
+
+    private func openDashboard() {
+        if dashboard == nil {
+            dashboard = DashboardWindowController(
+                historyStore: { [weak self] in self?.historyStore },
+                historyError: { [weak self] in self?.historyError },
+                petState: { [weak self] in
+                    guard let self else { return nil }
+                    return DashboardPetState(
+                        pets: self.pets,
+                        selectedPetID: self.preferences.selectedPetID,
+                        width: self.preferences.petWidth,
+                        autonomyEnabled: self.preferences.autonomyEnabled,
+                        autonomyConfiguration: self.preferences.autonomyConfiguration
+                    )
+                },
+                onSelectPet: { [weak self] in self?.selectPet(id: $0) },
+                onSetWidth: { [weak self] in self?.selectSize($0) },
+                onResetPosition: { [weak self] in self?.resetPetPosition() },
+                onSetAutonomyEnabled: { [weak self] enabled in
+                    guard let self else { return }
+                    self.preferences.autonomyEnabled = enabled
+                    self.overlay.setAutonomyEnabled(enabled)
+                    self.refreshMenu()
+                },
+                onSetAutonomyConfiguration: { [weak self] in self?.setAutonomyConfiguration($0) }
+            )
+        }
+        dashboard?.present()
     }
 
     private func refreshMonitorPresentation() {

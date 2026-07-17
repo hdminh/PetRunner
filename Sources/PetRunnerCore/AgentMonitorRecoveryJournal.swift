@@ -48,6 +48,14 @@ public struct AgentMonitorRecoveryJournal: Sendable {
         }
     }
 
+    public func remove(_ key: AgentSessionKey) throws {
+        try withExclusiveLock {
+            var records = readRecords()
+            records.removeAll { $0.key == key }
+            try write(records)
+        }
+    }
+
     private var directoryURL: URL { url.deletingLastPathComponent() }
     private var lockURL: URL { url.deletingPathExtension().appendingPathExtension("lock") }
 
@@ -135,6 +143,7 @@ private struct Record: Codable, Equatable {
     let activity: AgentActivity?
     let scope: AgentSessionScope?
     let agentType: AgentSubagentType?
+    let source: AgentSessionEventSource?
     let sessionName: AgentSessionName?
     let estimatedCost: AgentSessionEstimatedCost?
     let firstSeenAt: Date
@@ -148,6 +157,7 @@ private struct Record: Codable, Equatable {
         activity = event.activity
         scope = event.scope
         agentType = event.agentType
+        source = event.source
         sessionName = event.sessionName
         estimatedCost = event.estimatedCost
         self.firstSeenAt = firstSeenAt
@@ -165,6 +175,7 @@ private struct Record: Codable, Equatable {
             activity: activity,
             scope: scope ?? .primary,
             agentType: agentType,
+            source: source ?? .unknown,
             sessionName: sessionName,
             estimatedCost: estimatedCost
         )

@@ -243,6 +243,26 @@ struct AgentMonitorTests {
         #expect(AgentSessionExpiryPolicy.gracePeriod(for: child) == 2)
     }
 
+    @Test func admitsCursorToolEventsOnlyForKnownPrimarySessions() {
+        var store = AgentSessionStore()
+        let orphanWorkerTool = event(provider: .cursor, id: "worker", status: .working, source: .tool)
+        let rootPrompt = event(provider: .cursor, id: "root", status: .working, source: .prompt)
+        let rootTool = event(provider: .cursor, id: "root", status: .reviewing, source: .tool)
+        let childLifecycle = event(
+            provider: .cursor,
+            id: "root",
+            status: .working,
+            scope: .subagent(agentID: "child"),
+            source: .subagentLifecycle
+        )
+
+        #expect(!store.accepts(orphanWorkerTool))
+        #expect(store.accepts(rootPrompt))
+        store.upsert(rootPrompt)
+        #expect(store.accepts(rootTool))
+        #expect(store.accepts(childLifecycle))
+    }
+
     @Test func migratesOnlyOneLegacyProviderAndLeavesAmbiguousChoicesDisabled() {
         #expect(MonitorProviderMigration.fromLegacyProviders([.claude]) == .selected(.claude))
         #expect(MonitorProviderMigration.fromLegacyProviders([]) == .requiresReconfiguration)
@@ -262,8 +282,9 @@ struct AgentMonitorTests {
         status: AgentStatus,
         model: AgentSessionModel? = nil,
         activity: AgentActivity? = nil,
-        scope: AgentSessionScope = .primary
+        scope: AgentSessionScope = .primary,
+        source: AgentSessionEventSource = .unknown
     ) -> NormalizedAgentEvent {
-        NormalizedAgentEvent(provider: provider, sessionID: id, status: status, model: model, activity: activity, scope: scope)
+        NormalizedAgentEvent(provider: provider, sessionID: id, status: status, model: model, activity: activity, scope: scope, source: source)
     }
 }

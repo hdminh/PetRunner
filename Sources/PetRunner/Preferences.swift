@@ -14,6 +14,10 @@ struct PetRunnerPreferences {
         static let monitorProvider = "monitorProvider"
         static let monitorBubbleFields = "monitorBubbleFields"
         static let monitorBubbleCollapsed = "monitorBubbleCollapsed"
+        static let autonomyEnabled = "autonomyEnabled"
+        static let autonomyMinimumWait = "autonomyMinimumWait"
+        static let autonomyMaximumWait = "autonomyMaximumWait"
+        static let autonomyEnabledActions = "autonomyEnabledActions"
     }
 
     private let defaults: UserDefaults
@@ -93,5 +97,35 @@ struct PetRunnerPreferences {
     var monitorBubbleCollapsed: Bool {
         get { defaults.bool(forKey: Key.monitorBubbleCollapsed) }
         nonmutating set { defaults.set(newValue, forKey: Key.monitorBubbleCollapsed) }
+    }
+
+    var autonomyEnabled: Bool {
+        get { defaults.object(forKey: Key.autonomyEnabled) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.autonomyEnabled) }
+    }
+
+    var autonomyConfiguration: AutonomyConfiguration {
+        get {
+            let defaultConfiguration = AutonomyConfiguration.default
+            let minimumWait = defaults.object(forKey: Key.autonomyMinimumWait) == nil
+                ? defaultConfiguration.minimumWait
+                : defaults.double(forKey: Key.autonomyMinimumWait)
+            let maximumWait = defaults.object(forKey: Key.autonomyMaximumWait) == nil
+                ? defaultConfiguration.maximumWait
+                : defaults.double(forKey: Key.autonomyMaximumWait)
+            let enabledActions = defaults.stringArray(forKey: Key.autonomyEnabledActions)
+                .map { Set($0.compactMap(AutonomousActionKind.init(rawValue:))) }
+                ?? defaultConfiguration.enabledActions
+            return AutonomyConfiguration(
+                minimumWait: minimumWait,
+                maximumWait: maximumWait,
+                enabledActions: enabledActions
+            ) ?? defaultConfiguration
+        }
+        nonmutating set {
+            defaults.set(newValue.minimumWait, forKey: Key.autonomyMinimumWait)
+            defaults.set(newValue.maximumWait, forKey: Key.autonomyMaximumWait)
+            defaults.set(newValue.enabledActions.map(\.rawValue), forKey: Key.autonomyEnabledActions)
+        }
     }
 }

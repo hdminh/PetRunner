@@ -27,6 +27,13 @@ internal static class AnimationTests
         Check.Equal(AnimationState.Idle, playback.State);
         Check.Equal(0, playback.FrameIndex);
 
+        foreach (var item in new[] { (AnimationState.Waving, 2), (AnimationState.Failed, 1) })
+        {
+            playback.Start(item.Item1);
+            playback.Advance(AnimationContract.FrameDurations(item.Item1).Sum() * item.Item2);
+            Check.Equal(AnimationState.Idle, playback.State);
+        }
+
         playback.Advance(AnimationContract.FrameDurations(AnimationState.Idle)[0]);
         Check.Equal(1, playback.FrameIndex);
 

@@ -9,7 +9,7 @@ public enum AgentMonitorBridgeError: Error, Equatable, Sendable {
 }
 
 public struct AgentMonitorEnvelope: Codable, Equatable, Sendable {
-    public static let protocolVersion = 3
+    public static let protocolVersion = 4
     public static let maximumBytes = 4_096
 
     public let version: Int
@@ -22,6 +22,7 @@ public struct AgentMonitorEnvelope: Codable, Equatable, Sendable {
     public let scope: AgentSessionScope?
     public let agentType: AgentSubagentType?
     public let lifecycle: AgentSessionLifecycle?
+    public let source: AgentSessionEventSource?
     public let sessionName: AgentSessionName?
     public let estimatedCost: AgentSessionEstimatedCost?
 
@@ -36,6 +37,7 @@ public struct AgentMonitorEnvelope: Codable, Equatable, Sendable {
         scope: AgentSessionScope? = nil,
         agentType: AgentSubagentType? = nil,
         lifecycle: AgentSessionLifecycle? = nil,
+        source: AgentSessionEventSource? = nil,
         sessionName: AgentSessionName? = nil,
         estimatedCost: AgentSessionEstimatedCost? = nil
     ) {
@@ -49,6 +51,7 @@ public struct AgentMonitorEnvelope: Codable, Equatable, Sendable {
         self.scope = scope
         self.agentType = agentType
         self.lifecycle = lifecycle
+        self.source = source
         self.sessionName = sessionName
         self.estimatedCost = estimatedCost
     }
@@ -66,6 +69,7 @@ public struct AgentMonitorEnvelope: Codable, Equatable, Sendable {
             scope: scope ?? .primary,
             agentType: agentType,
             lifecycle: lifecycle ?? .updated,
+            source: source ?? .unknown,
             sessionName: sessionName,
             estimatedCost: estimatedCost
         )

@@ -27,6 +27,10 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
     private var lastPointerLocation: CGPoint?
     private var lastPointerMovementTime: TimeInterval = -.infinity
     private var monitorAnimation: AnimationState?
+    private var autonomy = AutonomyPolicy()
+    private var autonomyEnabled = true
+    private var autonomousWalk: AutonomousWalk?
+    private var autonomousAnimationActive = false
 
     private let physicalPointerLookDuration: TimeInterval = 0.6
 
@@ -72,6 +76,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         self.pet = pet
         playback.start(.idle)
         motion = nil
+        cancelAutonomy()
         lastPointerLocation = nil
         lastPointerMovementTime = -.infinity
         resize(to: width, anchorTopLeft: false)
@@ -88,9 +93,11 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         atlas = nil
         pet = nil
         motion = nil
+        cancelAutonomy()
     }
 
     func setWidth(_ width: CGFloat) {
+        cancelAutonomy()
         resize(to: width, anchorTopLeft: true)
         onSizeChanged?(panel.frame.width)
         onPositionChanged?(panel.frame.origin)
@@ -99,9 +106,29 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
 
     func setMonitorAnimation(_ state: AnimationState?) {
         guard monitorAnimation != state else { return }
+        cancelAutonomy()
         monitorAnimation = state
         playback.start(state ?? (motion == nil ? .idle : playback.state))
         renderCurrentFrame()
+    }
+
+    func setAutonomyEnabled(_ enabled: Bool) {
+        autonomyEnabled = enabled
+        cancelAutonomy()
+        renderCurrentFrame()
+    }
+
+    func setAutonomyConfiguration(_ configuration: AutonomyConfiguration) {
+        autonomy.update(configuration: configuration)
+        cancelAutonomy()
+        renderCurrentFrame()
+    }
+
+    func resetPositionToDefault() {
+        let origin = clampedOrigin(defaultOrigin(for: panel.frame.size))
+        panel.setFrameOrigin(origin)
+        onPositionChanged?(origin)
+        onFrameChanged?(panel.frame)
     }
 
     func clampToAvailableScreens() {
@@ -119,19 +146,23 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
 
     func spriteViewDidClick(_ view: SpriteView) {
         motion = nil
+        cancelAutonomy()
         guard monitorAnimation == nil else { return }
         playback.start(.jumping)
         renderCurrentFrame()
     }
 
     func spriteViewDidHover(_ view: SpriteView) {
+        cancelAutonomy()
         guard monitorAnimation == nil else { return }
         guard !interactionActive, motion == nil, playback.state == .idle else { return }
-        playback.start(.jumping)
+        guard let action = autonomy.startAction() else { return }
+        performAutonomousAction(action)
         renderCurrentFrame()
     }
 
     func spriteViewDidEndHover(_ view: SpriteView) {
+        cancelAutonomy()
         guard monitorAnimation == nil else { return }
         guard !interactionActive, motion == nil, playback.state == .jumping else { return }
         playback.start(.idle)
@@ -140,6 +171,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
 
     func spriteView(_ view: SpriteView, dragDidBeginAt pointer: CGPoint) {
         motion = nil
+        cancelAutonomy()
         interactionActive = true
         dragStartPointer = pointer
         dragStartOrigin = panel.frame.origin
@@ -161,6 +193,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
     }
 
     func spriteView(_ view: SpriteView, dragDidEndWith velocity: CGVector) {
+        cancelAutonomy()
         interactionActive = false
         dragStartPointer = nil
         dragStartOrigin = nil
@@ -177,6 +210,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
 
     func spriteView(_ view: SpriteView, resizeDidBeginAt pointer: CGPoint) {
         motion = nil
+        cancelAutonomy()
         playback.start(.idle)
         interactionActive = true
         resizeStartPointer = pointer
@@ -198,6 +232,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
     }
 
     @objc private func screenConfigurationChanged() {
+        cancelAutonomy()
         clampToAvailableScreens()
     }
 
@@ -223,7 +258,82 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
                 updateMovementAnimation(horizontalMotion: currentMotion.velocity.dx, useRightWhenVertical: true)
             }
         }
+        advanceAutonomy(now: now, delta: delta)
         renderCurrentFrame()
+    }
+
+    private func advanceAutonomy(now: TimeInterval, delta: TimeInterval) {
+        if var walk = autonomousWalk {
+            walk.elapsed = min(walk.duration, walk.elapsed + delta)
+            let progress = walk.duration == 0 ? 1 : walk.elapsed / walk.duration
+            panel.setFrameOrigin(clampedOrigin(CGPoint(
+                x: walk.origin.x + (walk.targetX - walk.origin.x) * progress,
+                y: walk.origin.y
+            )))
+            onFrameChanged?(panel.frame)
+            if walk.elapsed >= walk.duration {
+                autonomousWalk = nil
+                autonomy.finish()
+                playback.start(.idle)
+                onPositionChanged?(panel.frame.origin)
+                onFrameChanged?(panel.frame)
+            } else {
+                autonomousWalk = walk
+            }
+            return
+        }
+        if autonomousAnimationActive, playback.state == .idle {
+            autonomousAnimationActive = false
+            autonomy.finish()
+        }
+        guard isAutonomyEligible,
+              let action = autonomy.tick(now: now, isEligible: true)
+        else { return }
+        performAutonomousAction(action)
+    }
+
+    private func performAutonomousAction(_ action: AutonomousAction) {
+        switch action {
+        case let .walk(duration): startAutonomousWalk(duration: duration)
+        case .wave:
+            autonomousAnimationActive = true
+            playback.start(.waving)
+        case .jump:
+            autonomousAnimationActive = true
+            playback.start(.jumping)
+        case .cry:
+            autonomousAnimationActive = true
+            playback.start(.failed)
+        }
+    }
+
+    private var isAutonomyEligible: Bool {
+        panel.isVisible && autonomyEnabled && monitorAnimation == nil && !interactionActive && motion == nil && autonomousWalk == nil && !autonomousAnimationActive && playback.state == .idle
+    }
+
+    private func startAutonomousWalk(duration: TimeInterval) {
+        let bounds = bestScreen(for: panel.frame)?.visibleFrame ?? NSScreen.main?.visibleFrame ?? panel.frame
+        let leftSpace = panel.frame.minX - bounds.minX
+        let rightSpace = bounds.maxX - panel.frame.maxX
+        let direction: CGFloat = rightSpace >= leftSpace ? 1 : -1
+        let available = max(0, direction > 0 ? rightSpace : leftSpace)
+        let distance = min(available, max(panel.frame.width * 0.75, 96 * duration))
+        guard distance >= 8 else {
+            autonomy.finish()
+            return
+        }
+        autonomousWalk = AutonomousWalk(origin: panel.frame.origin, targetX: panel.frame.origin.x + direction * distance, duration: duration)
+        playback.start(direction < 0 ? .runningLeft : .runningRight)
+    }
+
+    private func cancelAutonomy() {
+        let hadAutonomousAction = autonomy.isPerforming || autonomousWalk != nil || autonomousAnimationActive
+        autonomy.cancel()
+        autonomousWalk = nil
+        autonomousAnimationActive = false
+        if hadAutonomousAction, monitorAnimation == nil {
+            playback.start(.idle)
+        }
     }
 
     private func updateMovementAnimation(
@@ -314,4 +424,11 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         let dy = max(max(rect.minY - point.y, 0), point.y - rect.maxY)
         return dx * dx + dy * dy
     }
+}
+
+private struct AutonomousWalk {
+    let origin: CGPoint
+    let targetX: CGFloat
+    let duration: TimeInterval
+    var elapsed: TimeInterval = 0
 }
