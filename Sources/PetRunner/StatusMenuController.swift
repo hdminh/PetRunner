@@ -7,8 +7,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     var onSelectPet: ((String) -> Void)?
     var onSelectSize: ((CGFloat) -> Void)?
     var onReload: (() -> Void)?
+    var onOpenDashboard: (() -> Void)?
     var onToggleMonitor: (() -> Void)?
+    var onConfigureMonitor: (() -> Void)?
     var onRepairMonitor: (() -> Void)?
+    var onToggleAutonomy: (() -> Void)?
     var onQuit: (() -> Void)?
 
     private let statusItem: NSStatusItem
@@ -18,6 +21,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private var selectedID: String?
     private var selectedWidth: CGFloat = 112
     private var monitorEnabled = false
+    private var autonomyEnabled = true
     private var petSubmenu: NSMenu?
     private var previewView: PetPreviewMenuView?
     private var thumbnailCache: [ThumbnailKey: NSImage] = [:]
@@ -47,13 +51,15 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         failures: [PetFailure],
         selectedID: String?,
         width: CGFloat,
-        monitorEnabled: Bool = false
+        monitorEnabled: Bool = false,
+        autonomyEnabled: Bool = true
     ) {
         self.pets = pets
         self.failures = failures
         self.selectedID = selectedID
         selectedWidth = width
         self.monitorEnabled = monitorEnabled
+        self.autonomyEnabled = autonomyEnabled
         let activeKeys = Set(pets.map(thumbnailKey(for:)))
         thumbnailCache = thumbnailCache.filter { activeKeys.contains($0.key) }
         rebuildMenu()
@@ -92,6 +98,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         reload.target = self
         menu.addItem(reload)
 
+        let dashboard = NSMenuItem(title: "Open Dashboard…", action: #selector(openDashboard), keyEquivalent: "d")
+        dashboard.target = self
+        menu.addItem(dashboard)
+
         if !failures.isEmpty {
             let errorMenu = NSMenu(title: "Unavailable Pets")
             for failure in failures {
@@ -112,6 +122,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         monitor.state = monitorEnabled ? .on : .off
         monitorMenu.addItem(monitor)
         if monitorEnabled {
+            let configure = NSMenuItem(title: "Configure Monitor…", action: #selector(configureMonitor), keyEquivalent: "")
+            configure.target = self
+            monitorMenu.addItem(configure)
             monitorMenu.addItem(.separator())
             let repair = NSMenuItem(title: "Repair Hook Configuration…", action: #selector(repairMonitor), keyEquivalent: "")
             repair.target = self
@@ -120,6 +133,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         let monitorItem = NSMenuItem(title: "Agent Monitor", action: nil, keyEquivalent: "")
         monitorItem.submenu = monitorMenu
         menu.addItem(monitorItem)
+
+        let autonomy = NSMenuItem(title: "Autonomous Pet", action: #selector(toggleAutonomy), keyEquivalent: "")
+        autonomy.target = self
+        autonomy.state = autonomyEnabled ? .on : .off
+        menu.addItem(autonomy)
 
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit PetRunner", action: #selector(quitApp), keyEquivalent: "q")
@@ -222,8 +240,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     @objc private func reloadPets() { onReload?() }
+    @objc private func openDashboard() { onOpenDashboard?() }
     @objc private func toggleMonitor() { onToggleMonitor?() }
+    @objc private func configureMonitor() { onConfigureMonitor?() }
     @objc private func repairMonitor() { onRepairMonitor?() }
+    @objc private func toggleAutonomy() { onToggleAutonomy?() }
     @objc private func quitApp() { onQuit?() }
 }
 

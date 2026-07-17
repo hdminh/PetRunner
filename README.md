@@ -34,18 +34,23 @@ npx pet-runner uninstall
 
 Choose **Agent Monitor → Enable Agent Monitor** in the menu bar to explicitly select any
 detected Claude Code, Codex, or Cursor providers. It starts off by default and
-shows the provider, a two-line session name, and a small fixed state:
-`Working…`, `Reviewing…`, `Needs approval`, `Finished`, or `Failed`. The name is
-the first submitted prompt shortened in memory for Claude/Codex; Cursor first
-uses that fallback, then replaces it with Cursor's local conversation title
-when available. PetRunner never persists the name, and clears it when the app
-quits or the session expires.
+shows the provider, a two-line current activity, and a small fixed state:
+`Working…`, `Reviewing…`, `Needs approval`, `Finished`, or `Failed`. Activity is
+derived locally and deterministically from lifecycle hooks, such as `Reading
+server.ts`, `Ran swift`, or `Fetching docs.example.com`; PetRunner never sends
+it to an LLM.
 
-The attached rail shows up to five active sessions in MRU order. Use the large
-up/down buttons to browse and the highlighted color cell as an overview; the
-compact rail has a `+` button to reopen the card. Raw session IDs, commands,
-filenames, and transcript contents are not shown or sent to an LLM, so the
-feature adds no model-token usage—only small local hook and IPC overhead.
+The attached rail shows up to five active sessions in stable order. Use the
+large up/down buttons to browse and the highlighted color cell as an overview;
+the compact rail has a `+` button to reopen the card. For the contextual view,
+PetRunner may show a file basename, search pattern, URL hostname, subagent
+description, or the first token of a command. It never retains or displays a
+prompt, tool output, full command, raw tool payload, session ID, or transcript.
+
+To restore active work after PetRunner relaunches, the helper keeps at most five
+derived snapshots in a user-only runtime journal for up to 15 minutes. Terminal
+events and disabling monitoring remove those snapshots. This adds only local
+hook, file, and IPC overhead—no model-token usage.
 
 Disable monitoring before deleting a manually installed app in Finder. The npm
 uninstall command runs monitor-hook cleanup automatically.

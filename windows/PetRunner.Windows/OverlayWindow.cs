@@ -6,6 +6,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using Microsoft.Win32;
 using PetRunner.Core;
 using Forms = System.Windows.Forms;
 
@@ -20,6 +21,9 @@ internal sealed class OverlayWindow : Window, IDisposable
     private SpriteAtlas? atlas;
     private PetDescriptor? pet;
     private MotionState? motion;
+    private AutonomyPolicy autonomy = new();
+    private AutonomousWalk? autonomousWalk;
+    private bool autonomousAnimationActive;
     private double previousTick;
     private bool interacting;
     private bool resizing;
@@ -52,6 +56,7 @@ internal sealed class OverlayWindow : Window, IDisposable
         MouseLeftButtonUp += OnPointerUp;
         MouseEnter += OnPointerEnter;
         MouseLeave += OnPointerLeave;
+        SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
         timer.Tick += (_, _) => Tick();
         timer.Start();
     }
@@ -65,6 +70,7 @@ internal sealed class OverlayWindow : Window, IDisposable
         pet = descriptor;
         playback.Start(AnimationState.Idle);
         motion = null;
+        CancelAutonomy();
         lastPointerScreenPosition = null;
         lastPointerMovementTime = double.NegativeInfinity;
         SetWidth(width);
@@ -91,10 +97,12 @@ internal sealed class OverlayWindow : Window, IDisposable
         atlas = null;
         pet = null;
         motion = null;
+        CancelAutonomy();
     }
 
     public void SetWidth(double requestedWidth)
     {
+        CancelAutonomy();
         var oldRight = Left + Width;
         var oldTop = Top;
         Width = Math.Clamp(requestedWidth, 80, 224);
@@ -110,6 +118,7 @@ internal sealed class OverlayWindow : Window, IDisposable
     private void OnPointerDown(object sender, MouseButtonEventArgs args)
     {
         motion = null;
+        CancelAutonomy();
         interacting = true;
         moved = false;
         var local = args.GetPosition(this);
@@ -165,20 +174,24 @@ internal sealed class OverlayWindow : Window, IDisposable
 
     private void OnPointerEnter(object sender, System.Windows.Input.MouseEventArgs args)
     {
+        CancelAutonomy();
         if (interacting || motion is not null || playback.State != AnimationState.Idle) return;
-        playback.Start(AnimationState.Jumping);
+        if (autonomy.StartAction() is not { } action) return;
+        PerformAutonomousAction(action);
         Render();
     }
 
     private void OnPointerLeave(object sender, System.Windows.Input.MouseEventArgs args)
     {
-        if (interacting || motion is not null || playback.State != AnimationState.Jumping) return;
+        CancelAutonomy();
+        if (interacting || motion is not null) return;
         playback.Start(AnimationState.Idle);
         Render();
     }
 
     private void OnPointerUp(object sender, MouseButtonEventArgs args)
     {
+        CancelAutonomy();
         ReleaseMouseCapture();
         interacting = false;
         if (resizing)
@@ -235,7 +248,93 @@ internal sealed class OverlayWindow : Window, IDisposable
                 if (bounce.Horizontal) Render();
             }
         }
+        AdvanceAutonomy(now, delta);
         Render();
+    }
+
+    private void AdvanceAutonomy(double now, double delta)
+    {
+        if (autonomousWalk is { } walk)
+        {
+            walk.Elapsed = Math.Min(walk.Duration, walk.Elapsed + delta);
+            var progress = walk.Duration == 0 ? 1 : walk.Elapsed / walk.Duration;
+            Left = walk.StartX + (walk.TargetX - walk.StartX) * progress;
+            Top = walk.StartY;
+            ClampToScreen();
+            if (walk.Elapsed >= walk.Duration)
+            {
+                autonomousWalk = null;
+                autonomy.Finish();
+                playback.Start(AnimationState.Idle);
+                PositionChanged?.Invoke(Left, Top);
+            }
+            else
+            {
+                autonomousWalk = walk;
+            }
+            return;
+        }
+
+        if (autonomousAnimationActive && playback.State == AnimationState.Idle)
+        {
+            autonomousAnimationActive = false;
+            autonomy.Finish();
+        }
+        if (!IsAutonomyEligible) return;
+        var action = autonomy.Tick(now, true);
+        if (action is null) return;
+
+        PerformAutonomousAction(action.Value);
+    }
+
+    private void PerformAutonomousAction(AutonomousAction action)
+    {
+        switch (action.Kind)
+        {
+            case AutonomousActionKind.Walk:
+                StartAutonomousWalk(action.Duration);
+                break;
+            case AutonomousActionKind.Wave:
+                autonomousAnimationActive = true;
+                playback.Start(AnimationState.Waving);
+                break;
+            case AutonomousActionKind.Jump:
+                autonomousAnimationActive = true;
+                playback.Start(AnimationState.Jumping);
+                break;
+            case AutonomousActionKind.Cry:
+                autonomousAnimationActive = true;
+                playback.Start(AnimationState.Failed);
+                break;
+        }
+    }
+
+    private bool IsAutonomyEligible =>
+        IsVisible && !interacting && !resizing && motion is null && autonomousWalk is null &&
+        !autonomousAnimationActive && playback.State == AnimationState.Idle;
+
+    private void StartAutonomousWalk(double duration)
+    {
+        var bounds = ScreenBounds.WorkingArea(this);
+        var leftSpace = Left - bounds.X;
+        var rightSpace = bounds.X + bounds.Width - (Left + Width);
+        var direction = rightSpace >= leftSpace ? 1d : -1d;
+        var available = Math.Max(0, direction > 0 ? rightSpace : leftSpace);
+        var distance = Math.Min(available, Math.Max(Width * .75, 96 * duration));
+        if (distance < 8)
+        {
+            autonomy.Finish();
+            return;
+        }
+        autonomousWalk = new AutonomousWalk(Left, Left + direction * distance, Top, duration);
+        playback.Start(direction < 0 ? AnimationState.RunningLeft : AnimationState.RunningRight);
+    }
+
+    private void CancelAutonomy()
+    {
+        autonomy.Cancel();
+        autonomousWalk = null;
+        autonomousAnimationActive = false;
     }
 
     private void UpdateMovementAnimation(double horizontalDelta, double fallbackVelocity)
@@ -300,10 +399,29 @@ internal sealed class OverlayWindow : Window, IDisposable
         Top = clamped.Y;
     }
 
+    private void OnDisplaySettingsChanged(object? sender, EventArgs args)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            CancelAutonomy();
+            ClampToScreen();
+        });
+    }
+
     public void Dispose()
     {
         timer.Stop();
+        SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
         atlas?.Dispose();
         Close();
+    }
+
+    private struct AutonomousWalk(double startX, double targetX, double startY, double duration)
+    {
+        public double StartX = startX;
+        public double TargetX = targetX;
+        public double StartY = startY;
+        public double Duration = duration;
+        public double Elapsed;
     }
 }

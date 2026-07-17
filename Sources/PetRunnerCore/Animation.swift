@@ -52,7 +52,12 @@ public enum AnimationState: String, CaseIterable {
     }
 
     public var cyclesBeforeReturningToIdle: Int? {
-        self == .jumping ? 3 : nil
+        switch self {
+        case .waving: 2
+        case .jumping: 3
+        case .failed: 1
+        default: nil
+        }
     }
 }
 

@@ -24,6 +24,19 @@ public struct ProviderHookInstaller {
         try write(updates)
     }
 
+    /// Changes the active monitor provider as one prepared write. Existing
+    /// third-party hooks remain untouched; only PetRunner-owned hooks for the
+    /// other providers are removed.
+    public func replace(with provider: AgentProvider, executablePath: String) throws {
+        var updates = try AgentProvider.allCases
+            .filter { $0 != provider }
+            .compactMap { try preparedUpdate($0, executablePath: "", removing: true) }
+        if let selected = try preparedUpdate(provider, executablePath: executablePath, removing: false) {
+            updates.append(selected)
+        }
+        try write(updates)
+    }
+
     public func removeAll() throws {
         let updates = try AgentProvider.allCases.compactMap { provider in
             try preparedUpdate(provider, executablePath: "", removing: true)

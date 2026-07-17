@@ -7,6 +7,7 @@ internal static class Program
         var tests = new (string Name, Action Run)[]
         {
             (nameof(AnimationTests), AnimationTests.Run),
+            (nameof(AutonomyTests), AutonomyTests.Run),
             (nameof(PhysicsTests), PhysicsTests.Run),
             (nameof(PetLoaderTests), PetLoaderTests.Run),
             (nameof(SpriteAtlasTests), SpriteAtlasTests.Run),

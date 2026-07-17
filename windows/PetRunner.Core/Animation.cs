@@ -33,8 +33,13 @@ public static class AnimationContract
 
     public static int Row(AnimationState state) => (int)state;
     public static IReadOnlyList<double> FrameDurations(AnimationState state) => Durations[state];
-    public static int? CyclesBeforeReturningToIdle(AnimationState state) =>
-        state == AnimationState.Jumping ? 3 : null;
+    public static int? CyclesBeforeReturningToIdle(AnimationState state) => state switch
+    {
+        AnimationState.Waving => 2,
+        AnimationState.Jumping => 3,
+        AnimationState.Failed => 1,
+        _ => null,
+    };
 
     private static double[] Frames(int count, double regular, double last) =>
         Enumerable.Range(0, count).Select(index => index == count - 1 ? last : regular).ToArray();

@@ -8,7 +8,9 @@ final class SessionBubblePanelController {
     private let previousButton = NSButton(title: "", target: nil, action: nil)
     private let nextButton = NSButton(title: "", target: nil, action: nil)
     private let expandButton = NSButton(title: "", target: nil, action: nil)
-    private let titleLabel = NSTextField(labelWithString: "")
+    private let modelLabel = NSTextField(labelWithString: "")
+    private let jobLabel = NSTextField(wrappingLabelWithString: "")
+    private let detailLabel = NSTextField(labelWithString: "")
     private let contentView = NSView()
     private let panel: NSPanel
 
@@ -33,12 +35,25 @@ final class SessionBubblePanelController {
         background.frame = contentView.bounds
         contentView.addSubview(background)
 
-        titleLabel.font = .monospacedSystemFont(ofSize: 12, weight: .semibold)
-        titleLabel.textColor = .black
-        titleLabel.maximumNumberOfLines = 2
-        titleLabel.lineBreakMode = .byWordWrapping
-        titleLabel.isSelectable = false
-        contentView.addSubview(titleLabel)
+        modelLabel.font = .systemFont(ofSize: 12, weight: .bold)
+        modelLabel.textColor = .black
+        modelLabel.lineBreakMode = .byTruncatingTail
+        modelLabel.isSelectable = false
+        contentView.addSubview(modelLabel)
+
+        jobLabel.font = .systemFont(ofSize: 10, weight: .medium)
+        jobLabel.textColor = .black
+        jobLabel.maximumNumberOfLines = 2
+        jobLabel.lineBreakMode = .byTruncatingTail
+        jobLabel.isSelectable = false
+        contentView.addSubview(jobLabel)
+
+        detailLabel.font = .monospacedSystemFont(ofSize: 10, weight: .medium)
+        detailLabel.textColor = .black
+        detailLabel.maximumNumberOfLines = 2
+        detailLabel.lineBreakMode = .byTruncatingTail
+        detailLabel.isSelectable = false
+        contentView.addSubview(detailLabel)
 
         configure(collapseButton, action: #selector(collapse))
         collapseButton.toolTip = "Minimize session monitor"
@@ -67,11 +82,40 @@ final class SessionBubblePanelController {
         entries: [AgentSessionSnapshot],
         selectedIndex: Int,
         petFrame: CGRect,
+        visibleFields: [MonitorBubbleField],
         isCollapsed: Bool = false
     ) {
         guard entries.indices.contains(selectedIndex) else { hide(); return }
         let entry = entries[selectedIndex]
-        let layout = SessionBubbleLayout(sessionCount: entries.count, isCollapsed: isCollapsed)
+        let content = SessionBubbleContent(entry: entry, visibleFields: visibleFields)
+        let jobLineCount = wrappedJobLineCount(for: content.primaryText)
+        let bodyLineCount = (content.modelTitle == nil ? 0 : 1) + jobLineCount + content.detailRows.count
+        let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(petFrame) }) ?? NSScreen.main
+        let visible = screen?.visibleFrame ?? petFrame.insetBy(dx: -SessionBubbleLayout.width, dy: -200)
+        let provisional = SessionBubbleLayout(
+            sessionCount: entries.count,
+            selectedIndex: selectedIndex,
+            detailLineCount: bodyLineCount,
+            side: .above,
+            isCollapsed: isCollapsed
+        )
+        let side = SessionBubbleLayout.preferredSide(petFrame: petFrame, visibleFrame: visible, contentSize: provisional.contentSize)
+        let unanchoredLayout = SessionBubbleLayout(
+            sessionCount: entries.count,
+            selectedIndex: selectedIndex,
+            detailLineCount: bodyLineCount,
+            side: side,
+            isCollapsed: isCollapsed
+        )
+        let tailAnchorX = petFrame.midX - unanchoredLayout.origin(petFrame: petFrame, visibleFrame: visible).x
+        let layout = SessionBubbleLayout(
+            sessionCount: entries.count,
+            selectedIndex: selectedIndex,
+            detailLineCount: bodyLineCount,
+            side: side,
+            isCollapsed: isCollapsed,
+            tailAnchorX: tailAnchorX
+        )
         let contentSize = layout.contentSize
         panel.setContentSize(contentSize)
         contentView.frame = CGRect(origin: .zero, size: contentSize)
@@ -80,16 +124,16 @@ final class SessionBubblePanelController {
         background.sessionCount = entries.count
         background.selectedIndex = selectedIndex
         background.providerLabel = entry.provider.displayLabel
+        background.headerColor = entry.provider.headerColor
         background.sessionPosition = "\(selectedIndex + 1)/\(entries.count)"
-        background.statusLabel = entry.displayText
         background.indicatorTones = entries.map(\.indicatorTone)
+        background.detailLineCount = bodyLineCount
+        background.thoughtSide = side
         background.isCollapsed = isCollapsed
         background.canSelectPrevious = selectedIndex > 0
         background.canSelectNext = selectedIndex < entries.count - 1
 
-        titleLabel.frame = layout.titleFrame
-        titleLabel.stringValue = entry.detailText
-        titleLabel.isHidden = isCollapsed
+        layoutText(content, jobLineCount: jobLineCount, in: layout.metadataFrame, isCollapsed: isCollapsed)
 
         collapseButton.frame = layout.collapseControlFrame
         collapseButton.isHidden = isCollapsed
@@ -104,14 +148,7 @@ final class SessionBubblePanelController {
         expandButton.setAccessibilityLabel("Expand session monitor with \(entries.count) active sessions")
         background.setAccessibilityLabel(accessibilityLabel(for: entry, selectedIndex: selectedIndex, entryCount: entries.count, isCollapsed: isCollapsed))
 
-        let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(petFrame) }) ?? NSScreen.main
-        let visible = screen?.visibleFrame ?? petFrame.insetBy(dx: -contentSize.width, dy: -contentSize.height)
-        let right = petFrame.maxX + 10
-        let left = petFrame.minX - contentSize.width - 10
-        let preferredX = visible.maxX - right >= contentSize.width ? right : left
-        let x = min(max(preferredX, visible.minX), visible.maxX - contentSize.width)
-        let y = min(max(petFrame.maxY - contentSize.height, visible.minY), visible.maxY - contentSize.height)
-        panel.setFrameOrigin(CGPoint(x: x, y: y))
+        panel.setFrameOrigin(layout.origin(petFrame: petFrame, visibleFrame: visible))
         panel.orderFrontRegardless()
     }
 
@@ -140,6 +177,44 @@ final class SessionBubblePanelController {
         if isCollapsed {
             return "Collapsed session monitor. \(entryCount) active sessions. Expand to browse sessions."
         }
-        return "Expanded session monitor. \(entry.provider.displayLabel), \(entry.detailText), \(entry.displayText), session \(selectedIndex + 1) of \(entryCount)."
+        let model = entry.model.map { ", model \($0.value)" } ?? ""
+        return "Speech bubble. \(entry.provider.displayLabel)\(model), \(entry.detailText), \(entry.displayText), session \(selectedIndex + 1) of \(entryCount)."
+    }
+
+    private func wrappedJobLineCount(for text: String) -> Int {
+        let font = jobLabel.font ?? .systemFont(ofSize: 10, weight: .medium)
+        let bounds = (text as NSString).boundingRect(
+            with: CGSize(width: SessionBubbleLayout.width - 76, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font]
+        )
+        return min(2, max(1, Int(ceil(bounds.height / lineHeight(for: font)))))
+    }
+
+    private func layoutText(_ content: SessionBubbleContent, jobLineCount: Int, in frame: CGRect, isCollapsed: Bool) {
+        modelLabel.stringValue = content.modelTitle ?? ""
+        jobLabel.stringValue = content.primaryText
+        detailLabel.stringValue = content.detailRows.joined(separator: "\n")
+
+        var nextY = frame.maxY
+        if content.modelTitle != nil {
+            let height = modelLabel.font.map(lineHeight(for:)) ?? 15
+            nextY -= height
+            modelLabel.frame = CGRect(x: frame.minX, y: nextY, width: frame.width, height: height)
+        }
+        let jobHeight = (jobLabel.font.map(lineHeight(for:)) ?? 12) * CGFloat(jobLineCount)
+        nextY -= jobHeight
+        jobLabel.frame = CGRect(x: frame.minX, y: nextY, width: frame.width, height: jobHeight)
+        let detailHeight = (detailLabel.font.map(lineHeight(for:)) ?? 12) * CGFloat(content.detailRows.count)
+        nextY -= detailHeight
+        detailLabel.frame = CGRect(x: frame.minX, y: nextY, width: frame.width, height: detailHeight)
+
+        modelLabel.isHidden = isCollapsed || content.modelTitle == nil
+        jobLabel.isHidden = isCollapsed
+        detailLabel.isHidden = isCollapsed || content.detailRows.isEmpty
+    }
+
+    private func lineHeight(for font: NSFont) -> CGFloat {
+        ceil(font.ascender - font.descender + font.leading)
     }
 }

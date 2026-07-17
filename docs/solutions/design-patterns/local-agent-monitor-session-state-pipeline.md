@@ -20,8 +20,8 @@ tags: [agent-monitoring, local-ipc, session-state, appkit]
 PetRunner's optional monitor bridges local provider hooks to the floating pet.
 The useful UI unit is one current status for each `(provider, sessionID)` pair,
 not an event timeline. That makes the bubble useful away from the coding tab:
-it identifies the provider, its latest broad state, and whether attention is
-needed without exposing task content.
+it identifies the provider, latest derived activity, and whether attention is
+needed without retaining the provider's full payload.
 
 The state vocabulary is intentionally small: `working`, `reviewing`,
 `needsApproval`, `finished`, and `failed`. Each has fixed copy and maps to a
@@ -34,11 +34,12 @@ pet animation ([AgentMonitor.swift](../../../Sources/PetRunnerCore/AgentMonitor.
    install only entries marked as owned by PetRunner and leave third-party
    hooks intact ([ProviderHookConfiguration.swift](../../../Sources/PetRunnerCore/ProviderHookConfiguration.swift#L18), [ProviderHookConfigurationTests.swift](../../../Tests/PetRunnerCoreTests/ProviderHookConfigurationTests.swift#L23)).
 
-2. Normalize before crossing processes. `NormalizedAgentEvent` contains only
-   a provider, session ID, and fixed status. The normalizer uses the
-   provider-supplied session identifier and the event/tool signal needed to derive that status;
-   it does not forward prompts, commands, file paths, or transcript content
-   ([AgentMonitor.swift](../../../Sources/PetRunnerCore/AgentMonitor.swift#L51), [ProviderHookConfiguration.swift](../../../Sources/PetRunnerCore/ProviderHookConfiguration.swift#L77)).
+2. Normalize before crossing processes. `NormalizedAgentEvent` contains a
+   provider, session ID, fixed status, model, and a bounded activity label. The
+   normalizer reads only the tool name plus an allow-list of contextual fields:
+   a basename, pattern, hostname, subagent description, or first command token.
+   It never forwards prompts, tool output, full commands, raw payloads, or
+   transcript content ([AgentMonitor.swift](../../../Sources/PetRunnerCore/AgentMonitor.swift), [ProviderHookConfiguration.swift](../../../Sources/PetRunnerCore/ProviderHookConfiguration.swift)).
 
 3. Make the local delivery boundary explicit. The running app writes an
    ephemeral loopback port plus a per-run token to a private descriptor. The
@@ -48,19 +49,11 @@ pet animation ([AgentMonitor.swift](../../../Sources/PetRunnerCore/AgentMonitor.
    Framing is a robustness boundary for partial TCP reads, not a claim that it
    alone explains every historical delivery symptom.
 
-4. Store a bounded MRU view of current sessions. Replacing an existing key,
-   inserting it at index zero, and capping the list at five gives new activity
-   both state-update and recency semantics. Do not append a new record for a
-   status transition ([AgentMonitor.swift](../../../Sources/PetRunnerCore/AgentMonitor.swift#L82)).
-
-   ```swift
-   entries.removeAll { $0.key == event.key }
-   entries.insert(snapshot, at: 0)
-   if entries.count > Self.maximumEntries {
-       entries.removeLast(entries.count - Self.maximumEntries)
-   }
-   selectedIndex = 0
-   ```
+4. Store a bounded stable view of current sessions. A new key enters at the
+   front, while an existing key is replaced in place; cap the list at five and
+   do not append status history. Ignore a semantically identical update so a
+   hook burst cannot create unnecessary redraws
+   ([AgentMonitor.swift](../../../Sources/PetRunnerCore/AgentMonitor.swift)).
 
 5. Keep stored order separate from the user's viewing selection. Paging moves
    a clamped index without reordering entries. On removal, preserve the selected
@@ -69,8 +62,8 @@ pet animation ([AgentMonitor.swift](../../../Sources/PetRunnerCore/AgentMonitor.
 
 6. Make multiplicity visible before the user clicks. The expanded bubble draws
    offset cards, an external pixel rail with selected-position markers, and a
-   floating provider header. The card shows a deterministic anonymous session
-   label plus fixed status. The compact header preserves the provider/count and
+   floating provider header. The card shows the latest derived activity plus
+   fixed status. The compact header preserves the provider/count and
    one colored, accessible status light per retained session. The controller
    keeps real AppKit hit targets aligned with the drawn controls
    ([StackedBubbleBackgroundView.swift](../../../Sources/PetRunner/StackedBubbleBackgroundView.swift#L13), [SessionBubblePanelController.swift](../../../Sources/PetRunner/SessionBubblePanelController.swift#L38)).
@@ -80,6 +73,13 @@ pet animation ([AgentMonitor.swift](../../../Sources/PetRunnerCore/AgentMonitor.
    later event arrives for the same session, and hides the bubble plus clears
    the monitor animation once no entry remains ([AppDelegate.swift](../../../Sources/PetRunner/AppDelegate.swift#L169)).
 
+8. Recover only bounded recent work. Hook helpers persist up to five derived
+   snapshots in a `0600` journal guarded by an advisory lock. Records expire
+   after 15 minutes and terminal events remove them; a fresh app instance loads
+   surviving entries oldest-first so the stable queue is rebuilt without
+   stealing the user's later selection
+   ([AgentMonitorRecoveryJournal.swift](../../../Sources/PetRunnerCore/AgentMonitorRecoveryJournal.swift)).
+
 ## Why This Matters
 
 Raw event history becomes noisy and stale quickly. A bounded current-state
@@ -88,8 +88,8 @@ activity, while paging still makes the other active sessions discoverable.
 
 The bridge is local and deterministic: it reads hook JSON, normalizes it, and
 sends a small authenticated envelope. It makes no model request, so the bridge
-itself adds no LLM token usage. Constraining the envelope also keeps provider
-payload content out of the overlay. Its contract rejects invalid versions,
+itself adds no LLM token usage. Constraining and deriving the envelope keeps
+unneeded provider payload content out of the overlay. Its contract rejects invalid versions,
 tokens, blank session IDs, and oversized envelopes ([AgentMonitorBridgeContract.swift](../../../Sources/PetRunnerCore/AgentMonitorBridgeContract.swift#L29), [AgentMonitorBridgeContractTests.swift](../../../Tests/PetRunnerCoreTests/AgentMonitorBridgeContractTests.swift#L15)).
 
 ## When to Apply
@@ -100,14 +100,15 @@ another application. It fits when:
 
 - provider configuration is selected explicitly by the user;
 - incoming payloads can contain sensitive or high-volume data that the UI does
-  not need;
+  not need beyond a deliberately selected, bounded activity summary;
 - several sessions can be active but there is space for only one readable
   bubble; or
 - a terminal result should remain visible briefly, then disappear without
   hiding still-active sessions.
 
-This is not an audit trail. Persisted event history, task text, tool arguments,
-or system notifications need separate product, privacy, and retention choices.
+This is not an audit trail. The recovery journal stores only current derived
+snapshots; persisted event history, task text, tool arguments, or system
+notifications need separate product, privacy, and retention choices.
 
 ## Examples
 
@@ -119,15 +120,15 @@ let event = ProviderHookConfiguration(provider: .cursor).normalize(
     payload: ["conversation_id": "s-42", "tool_name": "Read"],
     eventName: "preToolUse"
 )
-// NormalizedAgentEvent(provider: .cursor, sessionID: "s-42", status: .reviewing)
+// NormalizedAgentEvent(provider: .cursor, sessionID: "s-42", status: .reviewing, activity: "Reading file")
 ```
 
 The behavior is covered by the focused normalization test
 ([ProviderHookConfigurationTests.swift](../../../Tests/PetRunnerCoreTests/ProviderHookConfigurationTests.swift#L68)).
 
 With three stored sessions, the foremost bubble shows `1/3` and renders three
-offset cards. Selecting the next session changes the displayed provider and
-status without mutating the MRU order. Core tests cover replacement without
+offset cards. Selecting the next session changes the displayed provider,
+activity, and status without mutating stable order. Core tests cover replacement without
 history, five-entry capping, paging, and preservation of selection during
 removal ([AgentMonitorTests.swift](../../../Tests/PetRunnerCoreTests/AgentMonitorTests.swift#L17)).
 

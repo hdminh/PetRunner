@@ -9,7 +9,7 @@ public enum AgentMonitorBridgeError: Error, Equatable, Sendable {
 }
 
 public struct AgentMonitorEnvelope: Codable, Equatable, Sendable {
-    public static let protocolVersion = 1
+    public static let protocolVersion = 4
     public static let maximumBytes = 4_096
 
     public let version: Int
@@ -17,7 +17,14 @@ public struct AgentMonitorEnvelope: Codable, Equatable, Sendable {
     public let provider: AgentProvider
     public let sessionID: String
     public let status: AgentStatus
-    public let displayName: AgentSessionDisplayName?
+    public let model: AgentSessionModel?
+    public let activity: AgentActivity?
+    public let scope: AgentSessionScope?
+    public let agentType: AgentSubagentType?
+    public let lifecycle: AgentSessionLifecycle?
+    public let source: AgentSessionEventSource?
+    public let sessionName: AgentSessionName?
+    public let estimatedCost: AgentSessionEstimatedCost?
 
     public init(
         version: Int = Self.protocolVersion,
@@ -25,21 +32,47 @@ public struct AgentMonitorEnvelope: Codable, Equatable, Sendable {
         provider: AgentProvider,
         sessionID: String,
         status: AgentStatus,
-        displayName: AgentSessionDisplayName? = nil
+        model: AgentSessionModel? = nil,
+        activity: AgentActivity? = nil,
+        scope: AgentSessionScope? = nil,
+        agentType: AgentSubagentType? = nil,
+        lifecycle: AgentSessionLifecycle? = nil,
+        source: AgentSessionEventSource? = nil,
+        sessionName: AgentSessionName? = nil,
+        estimatedCost: AgentSessionEstimatedCost? = nil
     ) {
         self.version = version
         self.token = token
         self.provider = provider
         self.sessionID = sessionID
         self.status = status
-        self.displayName = displayName
+        self.model = model
+        self.activity = activity
+        self.scope = scope
+        self.agentType = agentType
+        self.lifecycle = lifecycle
+        self.source = source
+        self.sessionName = sessionName
+        self.estimatedCost = estimatedCost
     }
 
     public func validated(expectedToken: String) throws -> NormalizedAgentEvent {
-        guard version == Self.protocolVersion else { throw AgentMonitorBridgeError.unsupportedVersion }
+        guard (1...Self.protocolVersion).contains(version) else { throw AgentMonitorBridgeError.unsupportedVersion }
         guard token == expectedToken, !token.isEmpty else { throw AgentMonitorBridgeError.invalidToken }
         guard !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw AgentMonitorBridgeError.invalidSession }
-        return NormalizedAgentEvent(provider: provider, sessionID: sessionID, status: status, displayName: displayName)
+        return NormalizedAgentEvent(
+            provider: provider,
+            sessionID: sessionID,
+            status: status,
+            model: model,
+            activity: activity,
+            scope: scope ?? .primary,
+            agentType: agentType,
+            lifecycle: lifecycle ?? .updated,
+            source: source ?? .unknown,
+            sessionName: sessionName,
+            estimatedCost: estimatedCost
+        )
     }
 
     public static func decode(_ data: Data, expectedToken: String) throws -> NormalizedAgentEvent {

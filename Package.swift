@@ -16,10 +16,7 @@ let package = Package(
         ),
     ],
     targets: [
-        .target(
-            name: "PetRunnerCore",
-            linkerSettings: [.linkedLibrary("sqlite3")]
-        ),
+        .target(name: "PetRunnerCore", linkerSettings: [.linkedLibrary("sqlite3")]),
         .executableTarget(name: "PetRunner", dependencies: ["PetRunnerCore"]),
         .testTarget(
             name: "PetRunnerCoreTests",
