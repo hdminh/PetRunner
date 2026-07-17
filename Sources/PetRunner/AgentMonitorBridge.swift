@@ -39,11 +39,17 @@ final class AgentMonitorBridge: @unchecked Sendable {
         Self.removeDescriptor()
     }
 
-    static let descriptorURL: URL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/PetRunner/agent-monitor.json")
+    static let runtimeDirectoryURL: URL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/PetRunner", isDirectory: true)
+    static let descriptorURL = runtimeDirectoryURL.appendingPathComponent("agent-monitor.json", isDirectory: false)
+    static let recoveryJournalURL = runtimeDirectoryURL.appendingPathComponent("agent-monitor-sessions.json", isDirectory: false)
 
     static func removeDescriptor() {
         try? FileManager.default.removeItem(at: descriptorURL)
+    }
+
+    static func removeRecoveryJournal() {
+        try? FileManager.default.removeItem(at: recoveryJournalURL)
     }
 
     private func receiveEnvelope(from connection: NWConnection, buffered: Data = Data()) {
@@ -74,7 +80,7 @@ final class AgentMonitorBridge: @unchecked Sendable {
     }
 
     private static func writeDescriptor(_ descriptor: AgentMonitorRuntimeDescriptor) throws {
-        let directory = descriptorURL.deletingLastPathComponent()
+        let directory = runtimeDirectoryURL
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(descriptor)
         try data.write(to: descriptorURL, options: .atomic)
@@ -98,8 +104,12 @@ enum AgentMonitorHookRunner {
         }
         guard input.count <= 64 * 1024,
               let payload = (try? JSONSerialization.jsonObject(with: input)) as? [String: Any],
-              let normalized = ProviderHookConfiguration(provider: provider).normalize(payload: payload, eventName: event),
-              let descriptorData = try? Data(contentsOf: AgentMonitorBridge.descriptorURL),
+              let normalized = ProviderHookConfiguration(provider: provider).normalize(payload: payload, eventName: event)
+        else { return 0 }
+
+        try? AgentMonitorRecoveryJournal(url: AgentMonitorBridge.recoveryJournalURL).record(normalized)
+
+        guard let descriptorData = try? Data(contentsOf: AgentMonitorBridge.descriptorURL),
               let descriptor = try? JSONDecoder().decode(AgentMonitorRuntimeDescriptor.self, from: descriptorData)
         else { return 0 }
 
@@ -108,7 +118,11 @@ enum AgentMonitorHookRunner {
             provider: normalized.provider,
             sessionID: normalized.sessionID,
             status: normalized.status,
-            displayName: normalized.displayName
+            model: normalized.model,
+            activity: normalized.activity,
+            scope: normalized.scope,
+            agentType: normalized.agentType,
+            lifecycle: normalized.lifecycle
         )
         guard let data = try? JSONEncoder().encode(envelope), let port = NWEndpoint.Port(rawValue: descriptor.port) else { return 0 }
         var length = UInt32(data.count).bigEndian

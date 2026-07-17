@@ -8,7 +8,7 @@ final class SessionBubblePanelController {
     private let previousButton = NSButton(title: "", target: nil, action: nil)
     private let nextButton = NSButton(title: "", target: nil, action: nil)
     private let expandButton = NSButton(title: "", target: nil, action: nil)
-    private let titleLabel = NSTextField(labelWithString: "")
+    private let metadataLabel = NSTextField(labelWithString: "")
     private let contentView = NSView()
     private let panel: NSPanel
 
@@ -33,12 +33,12 @@ final class SessionBubblePanelController {
         background.frame = contentView.bounds
         contentView.addSubview(background)
 
-        titleLabel.font = .monospacedSystemFont(ofSize: 12, weight: .semibold)
-        titleLabel.textColor = .black
-        titleLabel.maximumNumberOfLines = 2
-        titleLabel.lineBreakMode = .byWordWrapping
-        titleLabel.isSelectable = false
-        contentView.addSubview(titleLabel)
+        metadataLabel.font = .monospacedSystemFont(ofSize: 10, weight: .medium)
+        metadataLabel.textColor = .black
+        metadataLabel.maximumNumberOfLines = 4
+        metadataLabel.lineBreakMode = .byTruncatingTail
+        metadataLabel.isSelectable = false
+        contentView.addSubview(metadataLabel)
 
         configure(collapseButton, action: #selector(collapse))
         collapseButton.toolTip = "Minimize session monitor"
@@ -67,11 +67,29 @@ final class SessionBubblePanelController {
         entries: [AgentSessionSnapshot],
         selectedIndex: Int,
         petFrame: CGRect,
+        visibleFields: [MonitorBubbleField],
         isCollapsed: Bool = false
     ) {
         guard entries.indices.contains(selectedIndex) else { hide(); return }
         let entry = entries[selectedIndex]
-        let layout = SessionBubbleLayout(sessionCount: entries.count, isCollapsed: isCollapsed)
+        let detailRows = detailRows(for: entry, visibleFields: visibleFields)
+        let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(petFrame) }) ?? NSScreen.main
+        let visible = screen?.visibleFrame ?? petFrame.insetBy(dx: -SessionBubbleLayout.width, dy: -200)
+        let provisional = SessionBubbleLayout(
+            sessionCount: entries.count,
+            selectedIndex: selectedIndex,
+            detailLineCount: detailRows.count,
+            side: .above,
+            isCollapsed: isCollapsed
+        )
+        let side = SessionBubbleLayout.preferredSide(petFrame: petFrame, visibleFrame: visible, contentSize: provisional.contentSize)
+        let layout = SessionBubbleLayout(
+            sessionCount: entries.count,
+            selectedIndex: selectedIndex,
+            detailLineCount: detailRows.count,
+            side: side,
+            isCollapsed: isCollapsed
+        )
         let contentSize = layout.contentSize
         panel.setContentSize(contentSize)
         contentView.frame = CGRect(origin: .zero, size: contentSize)
@@ -80,16 +98,19 @@ final class SessionBubblePanelController {
         background.sessionCount = entries.count
         background.selectedIndex = selectedIndex
         background.providerLabel = entry.provider.displayLabel
+        background.headerColor = entry.provider.headerColor
         background.sessionPosition = "\(selectedIndex + 1)/\(entries.count)"
         background.statusLabel = entry.displayText
         background.indicatorTones = entries.map(\.indicatorTone)
+        background.detailLineCount = detailRows.count
+        background.thoughtSide = side
         background.isCollapsed = isCollapsed
         background.canSelectPrevious = selectedIndex > 0
         background.canSelectNext = selectedIndex < entries.count - 1
 
-        titleLabel.frame = layout.titleFrame
-        titleLabel.stringValue = entry.detailText
-        titleLabel.isHidden = isCollapsed
+        metadataLabel.frame = layout.metadataFrame
+        metadataLabel.stringValue = detailRows.joined(separator: "\n")
+        metadataLabel.isHidden = isCollapsed || detailRows.isEmpty
 
         collapseButton.frame = layout.collapseControlFrame
         collapseButton.isHidden = isCollapsed
@@ -104,14 +125,7 @@ final class SessionBubblePanelController {
         expandButton.setAccessibilityLabel("Expand session monitor with \(entries.count) active sessions")
         background.setAccessibilityLabel(accessibilityLabel(for: entry, selectedIndex: selectedIndex, entryCount: entries.count, isCollapsed: isCollapsed))
 
-        let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(petFrame) }) ?? NSScreen.main
-        let visible = screen?.visibleFrame ?? petFrame.insetBy(dx: -contentSize.width, dy: -contentSize.height)
-        let right = petFrame.maxX + 10
-        let left = petFrame.minX - contentSize.width - 10
-        let preferredX = visible.maxX - right >= contentSize.width ? right : left
-        let x = min(max(preferredX, visible.minX), visible.maxX - contentSize.width)
-        let y = min(max(petFrame.maxY - contentSize.height, visible.minY), visible.maxY - contentSize.height)
-        panel.setFrameOrigin(CGPoint(x: x, y: y))
+        panel.setFrameOrigin(layout.origin(petFrame: petFrame, visibleFrame: visible))
         panel.orderFrontRegardless()
     }
 
@@ -140,6 +154,18 @@ final class SessionBubblePanelController {
         if isCollapsed {
             return "Collapsed session monitor. \(entryCount) active sessions. Expand to browse sessions."
         }
-        return "Expanded session monitor. \(entry.provider.displayLabel), \(entry.detailText), \(entry.displayText), session \(selectedIndex + 1) of \(entryCount)."
+        let model = entry.model.map { ", model \($0.value)" } ?? ""
+        return "Thought bubble. \(entry.provider.displayLabel)\(model), \(entry.detailText), \(entry.displayText), session \(selectedIndex + 1) of \(entryCount)."
+    }
+
+    private func detailRows(for entry: AgentSessionSnapshot, visibleFields: [MonitorBubbleField]) -> [String] {
+        visibleFields.compactMap { field in
+            switch field {
+            case .model: entry.model.map { "MODEL  \($0.value)" }
+            case .job: entry.activity.map { "JOB    \($0.value)" }
+            case .sessionName: entry.sessionName.map { "SESSION \($0.value)" }
+            case .cost: entry.estimatedCost.map { "SESSION EST. \($0.displayText)" }
+            }
+        }
     }
 }

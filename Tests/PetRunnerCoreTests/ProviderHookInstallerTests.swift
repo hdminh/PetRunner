@@ -60,6 +60,25 @@ struct ProviderHookInstallerTests {
         )
     }
 
+    @Test func switchingProviderRemovesOnlyOtherPetRunnerOwnedHooks() throws {
+        let home = temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let installer = ProviderHookInstaller(home: home)
+        try installer.install([.claude], executablePath: "/tmp/PetRunner")
+        let cursorURL = home.appendingPathComponent(".cursor/hooks.json")
+        try FileManager.default.createDirectory(at: cursorURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("{\"version\":1,\"hooks\":{\"stop\":[{\"command\":\"other-command\"}]}}".utf8).write(to: cursorURL)
+
+        try installer.replace(with: .cursor, executablePath: "/tmp/PetRunner")
+
+        let claudeURL = home.appendingPathComponent(".claude/settings.json")
+        let claude = try Data(contentsOf: claudeURL)
+        #expect(!String(decoding: claude, as: UTF8.self).contains(ProviderHookConfiguration.ownershipMarker))
+        let cursor = try Data(contentsOf: cursorURL)
+        try ProviderHookConfiguration(provider: .cursor).verifyInstalled(in: cursor, executablePath: "/tmp/PetRunner")
+        #expect(String(decoding: cursor, as: UTF8.self).contains("other-command"))
+    }
+
     private func temporaryHome() -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("petrunner-hooks-\(UUID().uuidString)")
     }

@@ -6,42 +6,56 @@ final class StackedBubbleBackgroundView: NSView {
     var sessionCount = 0 { didSet { needsDisplay = true } }
     var selectedIndex = 0 { didSet { needsDisplay = true } }
     var providerLabel = "" { didSet { needsDisplay = true } }
+    var headerColor = ProviderHeaderColor(red: 0.72, green: 0.72, blue: 0.72) { didSet { needsDisplay = true } }
     var sessionPosition = "" { didSet { needsDisplay = true } }
     var statusLabel = "" { didSet { needsDisplay = true } }
     var indicatorTones: [AgentStatusTone] = [] { didSet { needsDisplay = true } }
+    var detailLineCount = 0 { didSet { needsDisplay = true } }
+    var thoughtSide: ThoughtBubbleSide = .above { didSet { needsDisplay = true } }
     var isCollapsed = false { didSet { needsDisplay = true } }
     var canSelectPrevious = false { didSet { needsDisplay = true } }
     var canSelectNext = false { didSet { needsDisplay = true } }
 
     private var layout: SessionBubbleLayout {
-        SessionBubbleLayout(sessionCount: sessionCount, isCollapsed: isCollapsed)
+        SessionBubbleLayout(
+            sessionCount: sessionCount,
+            selectedIndex: selectedIndex,
+            detailLineCount: detailLineCount,
+            side: thoughtSide,
+            isCollapsed: isCollapsed
+        )
     }
 
     override func draw(_ dirtyRect: NSRect) {
         if isCollapsed {
             drawCollapsedRail()
         } else {
-            drawExpandedBubble()
+            drawThoughtBubble()
         }
     }
 
-    private func drawExpandedBubble() {
+    private func drawThoughtBubble() {
         let layout = layout
-        drawPixelFrame(layout.cardFrame, fill: NSColor(white: 0.84, alpha: 1))
+        let bubble = layout.bubbleFrame
+        NSColor(calibratedWhite: 0.18, alpha: 1).setFill()
+        NSBezierPath(rect: bubble.offsetBy(dx: 4, dy: -4)).fill()
+        drawPixelFrame(bubble, fill: NSColor(white: 0.88, alpha: 1))
+        for dot in layout.dotFrames() {
+            NSColor.black.setFill()
+            NSBezierPath(rect: dot).fill()
+        }
 
-        NSColor(white: 0.72, alpha: 1).setFill()
+        color(for: headerColor).setFill()
         NSBezierPath(rect: layout.headerFrame).fill()
         NSColor.black.setFill()
-        NSBezierPath(rect: CGRect(x: 2, y: layout.headerFrame.minY - 2, width: layout.headerFrame.width, height: 2)).fill()
+        NSBezierPath(rect: CGRect(x: bubble.minX + 2, y: layout.headerFrame.minY - 2, width: layout.headerFrame.width, height: 2)).fill()
 
-        drawPixelText(providerLabel, at: CGPoint(x: 8, y: 103), scale: 1)
-        drawPixelText(sessionPosition, at: CGPoint(x: 164, y: 103), scale: 1)
+        drawPixelText(providerLabel, at: CGPoint(x: bubble.minX + 8, y: bubble.maxY - 8), scale: 1)
+        drawPixelText(sessionPosition, at: CGPoint(x: bubble.maxX - 62, y: bubble.maxY - 8), scale: 1)
         drawPixelButton(in: layout.collapseControlFrame, enabled: true)
-        drawPixelText("-", at: CGPoint(x: 201, y: 102), scale: 1)
+        drawPixelText("-", at: CGPoint(x: bubble.maxX - 18, y: bubble.maxY - 8), scale: 1)
 
-        drawPixelText(statusLabel.replacingOccurrences(of: "…", with: "..."), at: CGPoint(x: 10, y: 28), scale: 1)
-
-        drawPixelFrame(layout.railFrame, fill: NSColor(white: 0.67, alpha: 1))
+        drawPixelText(statusLabel.replacingOccurrences(of: "…", with: "..."), at: CGPoint(x: bubble.minX + 12, y: bubble.minY + 18), scale: 1)
         drawPixelButton(in: layout.previousControlFrame, enabled: canSelectPrevious)
         drawChevron(in: layout.previousControlFrame, pointingUp: true, enabled: canSelectPrevious)
         drawPixelButton(in: layout.nextControlFrame, enabled: canSelectNext)
@@ -80,11 +94,11 @@ final class StackedBubbleBackgroundView: NSView {
     }
 
     private func drawIndicators(using layout: SessionBubbleLayout) {
-        for index in 0..<sessionCount {
+        for (railIndex, sessionIndex) in layout.indicatorIndices.enumerated() {
             drawStatusLight(
-                in: layout.indicatorFrame(at: index),
-                tone: tone(at: index),
-                selected: index == selectedIndex
+                in: layout.indicatorFrame(at: railIndex),
+                tone: tone(at: sessionIndex),
+                selected: sessionIndex == selectedIndex
             )
         }
     }
@@ -135,6 +149,15 @@ final class StackedBubbleBackgroundView: NSView {
         case .green: NSColor(calibratedRed: 0.22, green: 0.68, blue: 0.34, alpha: 1)
         case .red: NSColor(calibratedRed: 0.88, green: 0.22, blue: 0.22, alpha: 1)
         }
+    }
+
+    private func color(for headerColor: ProviderHeaderColor) -> NSColor {
+        NSColor(
+            calibratedRed: headerColor.red,
+            green: headerColor.green,
+            blue: headerColor.blue,
+            alpha: 1
+        )
     }
 
     private func drawPixelText(_ text: String, at origin: CGPoint, scale: CGFloat, color: NSColor = .black) {

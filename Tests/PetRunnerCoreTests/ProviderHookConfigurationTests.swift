@@ -64,7 +64,7 @@ struct ProviderHookConfigurationTests {
         let hooks = try #require(root["hooks"] as? [String: Any])
 
         #expect(root["version"] as? Int == 1)
-        #expect(Set(hooks.keys) == Set(["sessionStart", "beforeSubmitPrompt", "preToolUse", "postToolUse", "postToolUseFailure", "stop", "sessionEnd"]))
+        #expect(Set(hooks.keys) == Set(["beforeSubmitPrompt", "preToolUse", "postToolUse", "postToolUseFailure", "stop", "sessionEnd"]))
     }
 
     @Test func installingPurgesStaleOwnedEventsWithoutRemovingThirdPartyHooks() throws {
@@ -91,29 +91,122 @@ struct ProviderHookConfigurationTests {
         }
     }
 
-    @Test func normalizesOnlySafeFields() {
+    @Test func normalizesOnlyDerivedActivityFields() {
         let configuration = ProviderHookConfiguration(provider: .cursor)
         let payload: [String: Any] = [
             "conversation_id": "safe-session",
             "tool_name": "Read",
+            "model_name": "gpt-5.2-codex",
             "prompt": "secret prompt",
             "command": "rm -rf /",
             "file_path": "/secret/file",
         ]
         let event = configuration.normalize(payload: payload, eventName: "preToolUse")
 
-        #expect(event == NormalizedAgentEvent(provider: .cursor, sessionID: "safe-session", status: .reviewing, displayName: nil))
+        #expect(event == NormalizedAgentEvent(
+            provider: .cursor,
+            sessionID: "safe-session",
+            status: .reviewing,
+            model: AgentSessionModel.sanitized("gpt-5.2-codex"),
+            activity: AgentActivity.sanitized("Reading file")
+        ))
     }
 
-    @Test func capturesOnlyPromptEventsAsBoundedDisplayNames() {
+    @Test func normalizesClaudeSubagentLifecycleWithoutForwardingMessages() {
+        let configuration = ProviderHookConfiguration(provider: .claude)
+        #expect(configuration.events.contains("SubagentStart"))
+        #expect(configuration.events.contains("SubagentStop"))
+
+        let start = configuration.normalize(
+            payload: [
+                "session_id": "root",
+                "agent_id": "child-a",
+                "agent_type": "Explore",
+                "model": "claude-sonnet-4-5",
+                "prompt": "do not retain",
+            ],
+            eventName: "SubagentStart"
+        )
+        let stop = configuration.normalize(
+            payload: [
+                "session_id": "root",
+                "agent_id": "child-a",
+                "agent_type": "Explore",
+                "last_assistant_message": "do not retain",
+            ],
+            eventName: "SubagentStop"
+        )
+
+        #expect(start?.key.scope == .subagent(agentID: "child-a"))
+        #expect(start?.agentType?.value == "Explore")
+        #expect(start?.status == .working)
+        #expect(stop?.key.scope == .subagent(agentID: "child-a"))
+        #expect(stop?.status == .finished)
+        #expect(stop?.lifecycle == .finished)
+        #expect(stop?.activity?.value.contains("retain") == false)
+    }
+
+    @Test func capturesModelFromSupportedPayloadKeys() {
         let claude = ProviderHookConfiguration(provider: .claude)
         let codex = ProviderHookConfiguration(provider: .codex)
         let cursor = ProviderHookConfiguration(provider: .cursor)
 
-        #expect(claude.normalize(payload: ["session_id": "a", "prompt": "Claude title"], eventName: "UserPromptSubmit")?.displayName?.value == "Claude title")
-        #expect(codex.normalize(payload: ["session_id": "b", "prompt": "Codex title"], eventName: "UserPromptSubmit")?.displayName?.value == "Codex title")
-        #expect(cursor.normalize(payload: ["conversation_id": "c", "prompt": "Cursor title"], eventName: "beforeSubmitPrompt")?.displayName?.value == "Cursor title")
-        #expect(cursor.normalize(payload: ["conversation_id": "c", "prompt": "Do not use"], eventName: "preToolUse")?.displayName == nil)
+        #expect(claude.normalize(payload: ["session_id": "a", "model": "claude-sonnet-4-5"], eventName: "SessionStart")?.model?.value == "claude-sonnet-4-5")
+        #expect(codex.normalize(payload: ["session_id": "b", "model_name": "gpt-5.2-codex"], eventName: "SessionStart")?.model?.value == "gpt-5.2-codex")
+        #expect(cursor.normalize(payload: ["conversation_id": "c", "modelName": "cursor-small"], eventName: "sessionStart") == nil)
+    }
+
+    @Test func formatsLifecycleActivitiesWithoutForwardingPromptText() {
+        let claude = ProviderHookConfiguration(provider: .claude)
+        let codex = ProviderHookConfiguration(provider: .codex)
+        let cursor = ProviderHookConfiguration(provider: .cursor)
+
+        #expect(claude.normalize(payload: ["session_id": "a", "prompt": "Claude secret"], eventName: "UserPromptSubmit")?.activity?.value == "Thinking…")
+        #expect(codex.normalize(payload: ["session_id": "b", "prompt": "Codex secret"], eventName: "UserPromptSubmit")?.activity?.value == "Thinking…")
+        #expect(cursor.normalize(payload: ["conversation_id": "c", "prompt": "Cursor secret"], eventName: "beforeSubmitPrompt")?.activity?.value == "Thinking…")
+        #expect(cursor.normalize(payload: ["conversation_id": "c"], eventName: "sessionStart") == nil)
+    }
+
+    @Test func formatsNestedAndFlattenedToolActivities() {
+        let codex = ProviderHookConfiguration(provider: .codex)
+        let claude = ProviderHookConfiguration(provider: .claude)
+        let cursor = ProviderHookConfiguration(provider: .cursor)
+
+        #expect(codex.normalize(
+            payload: ["session_id": "a", "tool_name": "Read", "tool_input": ["file_path": "/work/Sources/server.ts"]],
+            eventName: "PreToolUse"
+        )?.activity?.value == "Reading server.ts")
+        #expect(claude.normalize(
+            payload: ["session_id": "b", "tool_name": "Bash", "tool_input": ["command": "swift test --filter Monitor"]],
+            eventName: "PostToolUse"
+        )?.activity?.value == "Ran swift")
+        #expect(cursor.normalize(
+            payload: ["conversation_id": "c", "tool_name": "Grep", "pattern": "FIXME"],
+            eventName: "preToolUse"
+        )?.activity?.value == "Searching \"FIXME\"")
+    }
+
+    @Test func formatsWebTaskAndUnknownActivitiesWithBoundedText() {
+        let configuration = ProviderHookConfiguration(provider: .codex)
+
+        #expect(configuration.normalize(
+            payload: ["session_id": "a", "tool_name": "WebFetch", "tool_input": ["url": "https://docs.openai.com/path"]],
+            eventName: "PreToolUse"
+        )?.activity?.value == "Fetching docs.openai.com")
+        #expect(configuration.normalize(
+            payload: ["session_id": "a", "tool_name": "Task", "tool_input": ["description": "inspect hook payloads"]],
+            eventName: "PreToolUse"
+        )?.activity?.value == "Spawning inspect hook payloads")
+        #expect(configuration.normalize(
+            payload: ["session_id": "a", "tool_name": "mcp__custom__do_thing"],
+            eventName: "PostToolUse"
+        )?.activity?.value == "Called mcp__custom__do_thing")
+        let long = configuration.normalize(
+            payload: ["session_id": "a", "tool_name": "Read", "tool_input": ["file_path": "/work/" + String(repeating: "x", count: 120) + ".swift"]],
+            eventName: "PreToolUse"
+        )
+        #expect(long?.activity?.value.count ?? 0 <= AgentActivity.maximumCharacterCount)
+        #expect(long?.activity?.value.hasSuffix("…") == true)
     }
 
     @Test func mapsProviderEventsAndNeutralOutputRequirements() {
@@ -122,8 +215,11 @@ struct ProviderHookConfigurationTests {
         let cursor = ProviderHookConfiguration(provider: .cursor)
 
         #expect(claude.normalize(payload: ["session_id": "a"], eventName: "PermissionRequest")?.status == .needsApproval)
+        #expect(claude.normalize(payload: ["session_id": "a"], eventName: "PermissionRequest")?.activity?.value == "Waiting for you…")
         #expect(codex.normalize(payload: ["session_id": "a"], eventName: "Stop")?.status == .finished)
+        #expect(codex.normalize(payload: ["session_id": "a"], eventName: "Stop")?.activity?.value == "Done.")
         #expect(cursor.normalize(payload: ["conversation_id": "a", "status": "error"], eventName: "stop")?.status == .failed)
+        #expect(cursor.normalize(payload: ["conversation_id": "a", "status": "error"], eventName: "stop")?.activity?.value == "Session failed.")
         #expect(cursor.normalize(payload: ["conversation_id": "a"], eventName: "permissionRequest") == nil)
         #expect(!claude.requiresNeutralJSONOutput)
         #expect(!codex.requiresNeutralJSONOutput)

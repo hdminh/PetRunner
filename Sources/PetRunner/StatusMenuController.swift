@@ -8,6 +8,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     var onSelectSize: ((CGFloat) -> Void)?
     var onReload: (() -> Void)?
     var onToggleMonitor: (() -> Void)?
+    var onConfigureMonitor: (() -> Void)?
     var onRepairMonitor: (() -> Void)?
     var onQuit: (() -> Void)?
 
@@ -112,6 +113,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         monitor.state = monitorEnabled ? .on : .off
         monitorMenu.addItem(monitor)
         if monitorEnabled {
+            let configure = NSMenuItem(title: "Configure Monitor…", action: #selector(configureMonitor), keyEquivalent: "")
+            configure.target = self
+            monitorMenu.addItem(configure)
             monitorMenu.addItem(.separator())
             let repair = NSMenuItem(title: "Repair Hook Configuration…", action: #selector(repairMonitor), keyEquivalent: "")
             repair.target = self
@@ -223,6 +227,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     @objc private func reloadPets() { onReload?() }
     @objc private func toggleMonitor() { onToggleMonitor?() }
+    @objc private func configureMonitor() { onConfigureMonitor?() }
     @objc private func repairMonitor() { onRepairMonitor?() }
     @objc private func quitApp() { onQuit?() }
 }

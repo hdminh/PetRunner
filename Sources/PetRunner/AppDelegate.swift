@@ -10,8 +10,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let monitorBridge = AgentMonitorBridge()
     private var monitorStore = AgentSessionStore()
     private var terminalSessionExpiry: [AgentSessionKey: DispatchWorkItem] = [:]
-    private let cursorTitleResolver = CursorSessionTitleResolver()
-    private var titleResolutionTasks: [AgentSessionKey: TitleResolutionTask] = [:]
     private let sessionBubble = SessionBubblePanelController()
     private var monitorSetup: MonitorSetupWindowController?
     private var statusMenu: StatusMenuController?
@@ -22,12 +20,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         petsDirectory = resolvePetsDirectory()
+        preferences.migrateLegacyMonitorProviderIfNeeded()
 
         let menu = StatusMenuController()
         menu.onSelectPet = { [weak self] id in self?.selectPet(id: id) }
         menu.onSelectSize = { [weak self] width in self?.selectSize(width) }
         menu.onReload = { [weak self] in self?.reloadPets() }
         menu.onToggleMonitor = { [weak self] in self?.toggleMonitor() }
+        menu.onConfigureMonitor = { [weak self] in self?.presentMonitorSetup() }
         menu.onRepairMonitor = { [weak self] in self?.repairMonitorHooks() }
         menu.onQuit = { NSApp.terminate(nil) }
         statusMenu = menu
@@ -43,20 +43,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sessionBubble.onExpand = { [weak self] in self?.setMonitorBubbleCollapsed(false) }
         overlay.onFrameChanged = { [weak self] _ in self?.refreshMonitorPresentation() }
         reloadPets()
-        if preferences.monitorEnabled {
+        if preferences.monitorEnabled, preferences.monitorProvider != nil {
             do {
                 try startMonitorBridge()
+                restoreRecoveredMonitorSessions()
             } catch {
                 logger.error("Failed to start monitor bridge: \(error.localizedDescription, privacy: .public)")
             }
         } else {
             AgentMonitorBridge.removeDescriptor()
+            AgentMonitorBridge.removeRecoveryJournal()
         }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         cancelTerminalExpiry()
-        cancelTitleResolution()
         overlay.stop()
         monitorBridge.stop()
     }
@@ -133,11 +134,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 try ProviderHookInstaller().removeAll()
                 preferences.monitorEnabled = false
-                preferences.monitorProviders = []
+                preferences.monitorProvider = nil
                 cancelTerminalExpiry()
-                cancelTitleResolution()
                 monitorStore.removeAll()
                 monitorBridge.stop()
+                AgentMonitorBridge.removeRecoveryJournal()
                 sessionBubble.hide()
                 overlay.setMonitorAnimation(nil)
             } catch {
@@ -147,23 +148,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             refreshMenu()
             return
         }
+        presentMonitorSetup()
+    }
+
+    private func presentMonitorSetup() {
         let detections = ProviderDetector.detect(existingPaths: Set([".claude", ".codex", ".cursor"].filter {
             FileManager.default.fileExists(atPath: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent($0).path)
         }))
         let setup = MonitorSetupWindowController()
         monitorSetup = setup
         setup.onDismiss = { [weak self] in self?.monitorSetup = nil }
-        setup.present(detections: detections) { [weak self] providers in
-            guard let self, !providers.isEmpty, let executable = Bundle.main.executableURL?.path else { return }
+        setup.present(
+            detections: detections,
+            selectedProvider: preferences.monitorProvider,
+            bubbleFields: preferences.monitorBubbleFields
+        ) { [weak self] provider, bubbleFields in
+            guard let self, let executable = Bundle.main.executableURL?.path else { return }
             do {
                 try self.startMonitorBridge()
                 do {
-                    try ProviderHookInstaller().install(providers, executablePath: executable)
+                    try ProviderHookInstaller().replace(with: provider, executablePath: executable)
                 } catch {
                     self.monitorBridge.stop()
                     throw error
                 }
-                self.preferences.monitorProviders = providers
+                self.preferences.monitorProvider = provider
+                self.preferences.monitorBubbleFields = bubbleFields
                 self.preferences.monitorEnabled = true
                 self.refreshMenu()
             } catch {
@@ -175,12 +185,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func repairMonitorHooks() {
         guard preferences.monitorEnabled,
-              !preferences.monitorProviders.isEmpty,
+              let provider = preferences.monitorProvider,
               let executable = Bundle.main.executableURL?.path
         else { return }
         do {
             try startMonitorBridge()
-            try ProviderHookInstaller().install(preferences.monitorProviders, executablePath: executable)
+            try ProviderHookInstaller().replace(with: provider, executablePath: executable)
         } catch {
             logger.error("Failed to repair monitor hooks: \(error.localizedDescription, privacy: .public)")
             showMonitorError("PetRunner could not repair its monitor hooks. \(error.localizedDescription)")
@@ -189,19 +199,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startMonitorBridge() throws {
         monitorBridge.onEvent = { [weak self] event in
-            guard let self else { return }
+            guard let self, MonitorEventFilter(selectedProvider: self.preferences.monitorProvider).accepts(event) else { return }
             self.terminalSessionExpiry.removeValue(forKey: event.key)?.cancel()
-            self.monitorStore.upsert(event)
-            self.cancelTitleResolutionForUnretainedSessions()
-            if event.provider == .cursor {
-                self.resolveCursorTitle(for: event.key)
-            }
+            let changed = self.monitorStore.upsert(event)
             if event.status == .finished || event.status == .failed {
                 self.expireTerminalSession(event.key)
             }
-            self.refreshMonitorPresentation()
+            if changed { self.refreshMonitorPresentation() }
         }
         try monitorBridge.start()
+    }
+
+    private func restoreRecoveredMonitorSessions() {
+        let journal = AgentMonitorRecoveryJournal(url: AgentMonitorBridge.recoveryJournalURL)
+        guard let events = try? journal.recoveredEvents(), !events.isEmpty else { return }
+        for event in events where event.provider == preferences.monitorProvider {
+            _ = monitorStore.upsert(event)
+        }
+        _ = monitorStore.select(at: 0)
+        refreshMonitorPresentation()
     }
 
     private func selectPreviousSession() {
@@ -226,6 +242,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             entries: monitorStore.entries,
             selectedIndex: monitorStore.selectedIndex,
             petFrame: overlay.frame,
+            visibleFields: preferences.monitorBubbleFields,
             isCollapsed: preferences.monitorBubbleCollapsed
         )
     }
@@ -234,72 +251,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let expiry = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.terminalSessionExpiry.removeValue(forKey: key)
-            self.cancelTitleResolution(for: key)
             if self.monitorStore.remove(key) {
                 self.refreshMonitorPresentation()
             }
         }
         terminalSessionExpiry[key] = expiry
-        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(5), execute: expiry)
+        DispatchQueue.main.asyncAfter(deadline: .now() + AgentSessionExpiryPolicy.gracePeriod(for: key), execute: expiry)
     }
 
     private func cancelTerminalExpiry() {
         terminalSessionExpiry.values.forEach { $0.cancel() }
         terminalSessionExpiry.removeAll()
-    }
-
-    private func resolveCursorTitle(for key: AgentSessionKey) {
-        guard titleResolutionTasks[key] == nil,
-              monitorStore.entries.first(where: { $0.key == key })?.displayName?.source != .nativeProvider
-        else { return }
-        let resolver = cursorTitleResolver
-        let identifier = UUID()
-        let task = Task { [weak self] in
-            defer { self?.completeTitleResolution(for: key, identifier: identifier) }
-            // Delays are measured from the hook event: immediately, then 0.5s and 2s later.
-            for delay in [UInt64(0), 500_000_000, 1_500_000_000] {
-                if delay > 0 {
-                    try? await Task.sleep(nanoseconds: delay)
-                }
-                guard !Task.isCancelled else { return }
-                let displayName = await Task.detached(priority: .utility) {
-                    resolver.displayName(for: key.sessionID)
-                }.value
-                guard !Task.isCancelled else { return }
-                if let displayName {
-                    self?.applyResolvedCursorTitle(displayName, for: key)
-                    return
-                }
-            }
-        }
-        titleResolutionTasks[key] = TitleResolutionTask(identifier: identifier, task: task)
-    }
-
-    private func applyResolvedCursorTitle(_ displayName: AgentSessionDisplayName, for key: AgentSessionKey) {
-        guard monitorStore.setDisplayName(displayName, for: key) else { return }
-        cancelTitleResolution(for: key)
-        refreshMonitorPresentation()
-    }
-
-    private func cancelTitleResolution(for key: AgentSessionKey? = nil) {
-        if let key {
-            titleResolutionTasks.removeValue(forKey: key)?.task.cancel()
-            return
-        }
-        titleResolutionTasks.values.forEach { $0.task.cancel() }
-        titleResolutionTasks = [:]
-    }
-
-    private func completeTitleResolution(for key: AgentSessionKey, identifier: UUID) {
-        guard titleResolutionTasks[key]?.identifier == identifier else { return }
-        titleResolutionTasks.removeValue(forKey: key)
-    }
-
-    private func cancelTitleResolutionForUnretainedSessions() {
-        let retained = Set(monitorStore.entries.map(\.key))
-        for key in titleResolutionTasks.keys where !retained.contains(key) {
-            cancelTitleResolution(for: key)
-        }
     }
 
     private func showMonitorError(_ message: String) {
@@ -324,9 +286,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".codex/pets", isDirectory: true)
     }
-}
-
-private struct TitleResolutionTask {
-    let identifier: UUID
-    let task: Task<Void, Never>
 }

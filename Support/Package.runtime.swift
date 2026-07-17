@@ -9,10 +9,7 @@ let package = Package(
         .executable(name: "PetRunner", targets: ["PetRunner"]),
     ],
     targets: [
-        .target(
-            name: "PetRunnerCore",
-            linkerSettings: [.linkedLibrary("sqlite3")]
-        ),
+        .target(name: "PetRunnerCore"),
         .executableTarget(name: "PetRunner", dependencies: ["PetRunnerCore"]),
     ]
 )

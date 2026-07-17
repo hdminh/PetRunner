@@ -50,23 +50,27 @@ choose **Enable Agent Monitor** from the menu bar. The setup lists Claude Code,
 Codex, and Cursor when their usual local configuration directories are found;
 every option starts unchecked. Select only the providers you want to monitor.
 
-The hook sends only an opaque session ID, provider name, and one fixed state to
-the local app: `Working…`, `Reviewing…`, `Needs approval`, `Finished`, or
-`Failed`. It never sends a prompt, command, filename, or transcript and makes
-no model request, so it uses no additional model tokens. Each event launches a
-small local helper process and makes a short loopback IPC attempt; if PetRunner
-is not running, delivery silently does nothing.
+The hook sends an opaque session ID, provider name, fixed state, optional model,
+and a short deterministic activity label to the local app. Labels may contain a
+file basename, search pattern, URL hostname, subagent description, or first
+command token; they never include a prompt, tool output, full command, raw tool
+payload, or transcript. The feature makes no model request, so it uses no
+additional model tokens. Each event launches a small local helper process and
+makes a short loopback IPC attempt.
 
 Codex may ask you to review and trust the installed hook command. Cursor does
 not expose a passive approval event, so it will not display `Needs approval`.
-PetRunner keeps a single current state for each active session (up to five,
-most-recent first); it does not retain an event history. The expanded bubble
-shows the provider, a locally derived `SESSION` label, and fixed state text.
-Its attached pixel rail always shows one colored cell for each current session
-in MRU order; choose a cell to switch sessions. Use the pixel `-` control to
+PetRunner keeps a single current state and activity for each active session (up
+to five, in stable order); it does not retain an event history. The expanded
+bubble shows the provider, current activity, and fixed state text. A private
+`0600` runtime journal preserves only those derived snapshots for up to 15
+minutes so a relaunch can rediscover active work; terminal events and disabling
+the monitor clear the corresponding records. Its attached pixel rail always
+shows one colored cell for each current session; choose a cell to switch
+sessions. Use the pixel `-` control to
 collapse it into a tight vertical list of only those cells; choosing a compact
 cell reopens that session. Yellow means working, cyan reviewing, violet needs
-approval, green finished, and red failed. The label is not a task title or raw
+approval, green finished, and red failed. The activity is not a prompt or raw
 session ID, and color is backed by the expanded text plus VoiceOver descriptions.
 
 Choose **Disable Agent Monitor** to remove only PetRunner-owned hook entries

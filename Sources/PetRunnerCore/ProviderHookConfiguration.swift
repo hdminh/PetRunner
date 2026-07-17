@@ -28,11 +28,11 @@ public struct ProviderHookConfiguration: Sendable {
     public var events: [String] {
         switch provider {
         case .claude:
-            ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "PostToolUseFailure", "Stop", "StopFailure"]
+            ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "PostToolUseFailure", "Stop", "StopFailure", "SubagentStart", "SubagentStop"]
         case .codex:
             ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop"]
         case .cursor:
-            ["sessionStart", "beforeSubmitPrompt", "preToolUse", "postToolUse", "postToolUseFailure", "stop", "sessionEnd"]
+            ["beforeSubmitPrompt", "preToolUse", "postToolUse", "postToolUseFailure", "stop", "sessionEnd"]
         }
     }
 
@@ -83,8 +83,30 @@ public struct ProviderHookConfiguration: Sendable {
     }
 
     public func normalize(payload: [String: Any], eventName: String) -> NormalizedAgentEvent? {
-        guard let sessionID = sessionID(in: payload), !sessionID.isEmpty else { return nil }
         let loweredEvent = eventName.lowercased()
+        // Cursor emits this merely when a chat tab is opened. A request begins
+        // at beforeSubmitPrompt, so creating a session here would leave a
+        // permanent Thinking bubble for an untouched tab.
+        guard !(provider == .cursor && loweredEvent.contains("sessionstart")),
+              let sessionID = sessionID(in: payload), !sessionID.isEmpty
+        else { return nil }
+        if provider == .claude, loweredEvent == "subagentstart" || loweredEvent == "subagentstop" {
+            guard let agentID = payload["agent_id"] as? String,
+                  !agentID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return nil }
+            let isStopping = loweredEvent == "subagentstop"
+            let agentType = (payload["agent_type"] as? String).flatMap(AgentSubagentType.sanitized)
+            return NormalizedAgentEvent(
+                provider: provider,
+                sessionID: sessionID,
+                status: isStopping ? .finished : .working,
+                model: modelCandidate(in: payload),
+                activity: AgentActivity.sanitized(isStopping ? "Subagent finished" : "Subagent started"),
+                scope: .subagent(agentID: agentID),
+                agentType: agentType,
+                lifecycle: isStopping ? .finished : .updated
+            )
+        }
         let status: AgentStatus?
         if loweredEvent.contains("permission") { status = provider == .cursor ? nil : .needsApproval }
         else if loweredEvent.contains("failure") || payload["status"] as? String == "error" { status = .failed }
@@ -99,7 +121,8 @@ public struct ProviderHookConfiguration: Sendable {
                 provider: provider,
                 sessionID: sessionID,
                 status: $0,
-                displayName: displayNameCandidate(in: payload, eventName: loweredEvent)
+                model: modelCandidate(in: payload),
+                activity: activityCandidate(in: payload, eventName: loweredEvent, status: $0)
             )
         }
     }
@@ -184,16 +207,158 @@ public struct ProviderHookConfiguration: Sendable {
         return nestedHooks.contains { $0["command"] as? String == expectedCommand }
     }
 
-    private func displayNameCandidate(in payload: [String: Any], eventName: String) -> AgentSessionDisplayName? {
-        let isPromptEvent: Bool
-        switch provider {
-        case .claude, .codex:
-            isPromptEvent = eventName == "userpromptsubmit"
-        case .cursor:
-            isPromptEvent = eventName == "beforesubmitprompt"
+    private func modelCandidate(in payload: [String: Any]) -> AgentSessionModel? {
+        for key in ["model", "model_name", "modelName"] {
+            if let value = payload[key] as? String, let model = AgentSessionModel.sanitized(value) {
+                return model
+            }
         }
-        guard isPromptEvent, let prompt = payload["prompt"] as? String else { return nil }
-        return AgentSessionDisplayName.sanitized(prompt, source: .prompt)
+        return nil
+    }
+
+    private func activityCandidate(
+        in payload: [String: Any],
+        eventName: String,
+        status: AgentStatus
+    ) -> AgentActivity? {
+        if status == .failed { return AgentActivity.sanitized("Session failed.") }
+        if eventName.contains("permission") { return AgentActivity.sanitized("Waiting for you…") }
+        if eventName == "stop" || eventName.contains("sessionend") { return AgentActivity.sanitized("Done.") }
+        if eventName.contains("prompt") || eventName.contains("sessionstart") {
+            return AgentActivity.sanitized("Thinking…")
+        }
+        guard eventName.contains("tool") else { return nil }
+        let phase: ToolActivityPhase = eventName.contains("pretool") || eventName.contains("before")
+            ? .running
+            : .done
+        return AgentActivity.sanitized(formatToolActivity(payload: payload, phase: phase))
+    }
+
+    private func formatToolActivity(payload: [String: Any], phase: ToolActivityPhase) -> String {
+        let toolName = (payload["tool_name"] ?? payload["toolName"]) as? String ?? "tool"
+        let input = toolInput(in: payload)
+        let lower = toolName.lowercased()
+        let past = phase == .done
+
+        if isReadTool(lower) {
+            return fileActivity(
+                running: "Reading",
+                done: "Read",
+                fallbackRunning: "Reading file",
+                fallbackDone: "Read file",
+                input: input,
+                past: past
+            )
+        }
+        if isEditTool(lower) {
+            return fileActivity(
+                running: "Editing",
+                done: "Edited",
+                fallbackRunning: "Editing file",
+                fallbackDone: "Edited file",
+                input: input,
+                past: past
+            )
+        }
+        if isShellTool(lower) {
+            if let command = stringField("command", in: input) {
+                let executable = clip(command.split(whereSeparator: { $0.isWhitespace }).first.map(String.init) ?? command, to: 20)
+                return past ? "Ran \(executable)" : "Running \(executable)"
+            }
+            return past ? "Ran command" : "Running command"
+        }
+        if isGrepTool(lower) {
+            if let pattern = stringField("pattern", in: input) {
+                let text = clip(pattern, to: 28)
+                return past ? "Searched \"\(text)\"" : "Searching \"\(text)\""
+            }
+            return past ? "Searched files" : "Searching files"
+        }
+        if isGlobTool(lower) {
+            if let pattern = stringField("pattern", in: input) {
+                let text = clip(pattern, to: 28)
+                return past ? "Listed \(text)" : "Listing \(text)"
+            }
+            return past ? "Listed files" : "Listing files"
+        }
+        if isWebTool(lower) {
+            if let url = stringField("url", in: input), let host = URL(string: url)?.host {
+                let text = clip(host, to: 28)
+                return past ? "Fetched \(text)" : "Fetching \(text)"
+            }
+            return past ? "Fetched web" : "Searching web"
+        }
+        if isTaskTool(lower) {
+            if let description = stringField("description", in: input) ?? stringField("subject", in: input) {
+                return past ? "Subagent done" : "Spawning \(clip(description, to: 28))"
+            }
+            return past ? "Subagent done" : "Spawning subagent"
+        }
+        let name = clip(toolName, to: 28)
+        return past ? "Called \(name)" : "Calling \(name)"
+    }
+
+    private func toolInput(in payload: [String: Any]) -> [String: Any] {
+        if let input = payload["tool_input"] as? [String: Any] { return input }
+        if let input = payload["toolInput"] as? [String: Any] { return input }
+        return payload
+    }
+
+    private func fileActivity(
+        running: String,
+        done: String,
+        fallbackRunning: String,
+        fallbackDone: String,
+        input: [String: Any],
+        past: Bool
+    ) -> String {
+        if let path = stringField("file_path", in: input) ?? stringField("path", in: input) {
+            let name = clip(basename(path), to: 36)
+            return past ? "\(done) \(name)" : "\(running) \(name)"
+        }
+        return past ? fallbackDone : fallbackRunning
+    }
+
+    private func stringField(_ key: String, in input: [String: Any]) -> String? {
+        input[key] as? String
+    }
+
+    private func basename(_ path: String) -> String {
+        guard let index = path.lastIndex(where: { $0 == "/" || $0 == "\\" }) else { return path }
+        return String(path[path.index(after: index)...])
+    }
+
+    private func clip(_ text: String, to maximum: Int) -> String {
+        guard text.count > maximum else { return text }
+        return "\(text.prefix(maximum - 1))…"
+    }
+
+    private func isReadTool(_ tool: String) -> Bool {
+        tool == "read" || tool.contains("read_file")
+    }
+
+    private func isEditTool(_ tool: String) -> Bool {
+        ["edit", "multiedit", "write", "apply_patch"].contains(tool)
+    }
+
+    private func isShellTool(_ tool: String) -> Bool {
+        tool == "bash" || tool == "shell" || tool.contains("terminal")
+    }
+
+    private func isGrepTool(_ tool: String) -> Bool {
+        tool == "grep" || tool == "search"
+    }
+
+    private func isGlobTool(_ tool: String) -> Bool {
+        tool == "glob" || tool == "find" || tool == "list"
+    }
+
+    private func isWebTool(_ tool: String) -> Bool {
+        tool == "webfetch" || tool == "websearch"
+    }
+
+    private func isTaskTool(_ tool: String) -> Bool {
+        tool == "task" || tool == "agent"
     }
 
     private func sessionID(in payload: [String: Any]) -> String? {
@@ -212,4 +377,9 @@ public struct ProviderHookConfiguration: Sendable {
     private func shellQuoted(_ value: String) -> String {
         "'\(value.replacingOccurrences(of: "'", with: "'\\\"'\\\"'"))'"
     }
+}
+
+private enum ToolActivityPhase {
+    case running
+    case done
 }
