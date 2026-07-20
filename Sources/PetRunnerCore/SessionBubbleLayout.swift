@@ -59,13 +59,13 @@ public struct SessionBubbleLayout: Sendable {
 
     public var contentSize: CGSize {
         if isCollapsed { return CGSize(width: 24, height: 18 + CGFloat(indicatorIndices.count * 14)) }
-        return CGSize(width: Self.width, height: bubbleHeight + 20)
+        return CGSize(width: Self.width, height: bubbleHeight + 18)
     }
 
     public var contentBounds: CGRect { CGRect(origin: .zero, size: contentSize) }
 
     public var bubbleFrame: CGRect {
-        let y: CGFloat = side == .above ? 20 : 0
+        let y: CGFloat = side == .above ? 18 : 0
         return CGRect(x: 14, y: y, width: Self.width - 14, height: bubbleHeight)
     }
 
@@ -87,14 +87,18 @@ public struct SessionBubbleLayout: Sendable {
         case .above:
             return [
                 CGRect(x: centerX - 10, y: bubbleFrame.minY - 2, width: 20, height: 4),
-                CGRect(x: centerX - 10, y: bubbleFrame.minY - 10, width: 16, height: 8),
-                CGRect(x: centerX - 10, y: bubbleFrame.minY - 20, width: 8, height: 12),
+                CGRect(x: centerX - 10, y: bubbleFrame.minY - 6, width: 17, height: 4),
+                CGRect(x: centerX - 10, y: bubbleFrame.minY - 10, width: 14, height: 4),
+                CGRect(x: centerX - 10, y: bubbleFrame.minY - 14, width: 11, height: 4),
+                CGRect(x: centerX - 10, y: bubbleFrame.minY - 18, width: 8, height: 4),
             ]
         case .below:
             return [
                 CGRect(x: centerX - 10, y: bubbleFrame.maxY - 2, width: 20, height: 4),
-                CGRect(x: centerX - 10, y: bubbleFrame.maxY + 2, width: 16, height: 8),
-                CGRect(x: centerX - 10, y: bubbleFrame.maxY + 8, width: 8, height: 12),
+                CGRect(x: centerX - 10, y: bubbleFrame.maxY + 2, width: 17, height: 4),
+                CGRect(x: centerX - 10, y: bubbleFrame.maxY + 6, width: 14, height: 4),
+                CGRect(x: centerX - 10, y: bubbleFrame.maxY + 10, width: 11, height: 4),
+                CGRect(x: centerX - 10, y: bubbleFrame.maxY + 14, width: 8, height: 4),
             ]
         }
     }
@@ -104,15 +108,19 @@ public struct SessionBubbleLayout: Sendable {
         switch side {
         case .above:
             return [
-                CGRect(x: centerX - 8, y: bubbleFrame.minY - 2, width: 16, height: 4),
-                CGRect(x: centerX - 8, y: bubbleFrame.minY - 10, width: 12, height: 8),
-                CGRect(x: centerX - 8, y: bubbleFrame.minY - 18, width: 4, height: 10),
+                CGRect(x: centerX - 8, y: bubbleFrame.minY - 2, width: 16, height: 10),
+                CGRect(x: centerX - 8, y: bubbleFrame.minY - 6, width: 13, height: 4),
+                CGRect(x: centerX - 8, y: bubbleFrame.minY - 10, width: 10, height: 4),
+                CGRect(x: centerX - 8, y: bubbleFrame.minY - 14, width: 7, height: 4),
+                CGRect(x: centerX - 8, y: bubbleFrame.minY - 16, width: 4, height: 2),
             ]
         case .below:
             return [
-                CGRect(x: centerX - 8, y: bubbleFrame.maxY - 2, width: 16, height: 4),
-                CGRect(x: centerX - 8, y: bubbleFrame.maxY + 2, width: 12, height: 8),
-                CGRect(x: centerX - 8, y: bubbleFrame.maxY + 8, width: 4, height: 10),
+                CGRect(x: centerX - 8, y: bubbleFrame.maxY - 8, width: 16, height: 10),
+                CGRect(x: centerX - 8, y: bubbleFrame.maxY + 2, width: 13, height: 4),
+                CGRect(x: centerX - 8, y: bubbleFrame.maxY + 6, width: 10, height: 4),
+                CGRect(x: centerX - 8, y: bubbleFrame.maxY + 10, width: 7, height: 4),
+                CGRect(x: centerX - 8, y: bubbleFrame.maxY + 14, width: 4, height: 2),
             ]
         }
     }
