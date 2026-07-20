@@ -241,7 +241,7 @@ The bubble controller receives the selected snapshot and all retained entries as
 - **Files:**
   - Modify `README.md`.
   - Modify `docs/RUN_LOCAL.md`.
-  - Modify `docs/solutions/design-patterns/local-agent-monitor-session-state-pipeline.md` if its current guidance no longer reflects the renderer contract.
+  - Modify `docs/solutions/design-patterns/local-agent-monitor-live-state-and-session-history.md` if its current guidance no longer reflects the renderer contract.
 - **Approach:** Explain that the monitor shows an anonymized session label and fixed status, that compact lights represent current MRU sessions rather than history, and that the feature still makes no model calls or sends task content. Update the solution only where the final layout alters reusable implementation guidance. Use controlled synthetic events to capture all five statuses and five-session navigation before declaring the UI complete.
 - **Test scenarios:**
   - Documentation never implies that monitor labels are task titles or that prompt/path/transcript content is shown.
@@ -300,7 +300,7 @@ The bubble controller receives the selected snapshot and all retained entries as
 ### Sources and Research
 
 - `docs/plans/2026-07-14-001-feat-agent-session-monitor-plan.md` defines the monitor's existing provider, event, bounded-MRU, terminal-lifecycle, and privacy contracts that this plan must preserve.
-- `docs/solutions/design-patterns/local-agent-monitor-session-state-pipeline.md` documents the current event reduction, authenticated local transport, selection preservation, visible stack, and terminal removal patterns.
+- `docs/solutions/design-patterns/local-agent-monitor-live-state-and-session-history.md` documents the current event reduction, authenticated local transport, selection preservation, visible stack, terminal removal, and durable-history patterns.
 - `Sources/PetRunner/SessionBubblePanelController.swift` and `Sources/PetRunner/StackedBubbleBackgroundView.swift` show the current companion-panel layout, drawn stack, and transparent AppKit navigation targets being replaced.
 - `Sources/PetRunnerCore/AgentMonitor.swift` and `Sources/PetRunnerCore/AgentMonitorBridgeContract.swift` show that current monitor data is limited to provider, opaque session identity, and fixed status.
 - External research was not needed: this is a narrowly scoped macOS/AppKit presentation redesign with multiple direct local patterns, and the selected approach introduces no third-party dependency or external contract.

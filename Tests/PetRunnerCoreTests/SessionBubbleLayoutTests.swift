@@ -111,12 +111,24 @@ struct SessionBubbleLayoutTests {
         #expect(constrained.speechTailFrames().first?.minX == constrained.bubbleFrame.minX)
     }
 
-    @Test func speechTailHasOneStraightSideAndOneSteppedSide() {
+    @Test func speechTailKeepsItsLeftEdgeStraightWhileSteppingInFromTheRight() {
         let layout = SessionBubbleLayout(sessionCount: 1, side: .above, isCollapsed: false)
         let tail = layout.speechTailFrames()
 
-        #expect(tail.map(\.minX) == Array(repeating: tail[0].minX, count: 3))
-        #expect(tail.map(\.width) == [20, 16, 8])
-        #expect(layout.speechTailInteriorFrames().map(\.width) == [16, 12, 4])
+        #expect(tail.map(\.minX) == Array(repeating: tail[0].minX, count: 5))
+        #expect(tail.map(\.width) == [20, 17, 14, 11, 8])
+        let interior = layout.speechTailInteriorFrames()
+        #expect(interior.map(\.minX) == Array(repeating: interior[0].minX, count: 5))
+        #expect(interior.map(\.width) == [16, 13, 10, 7, 4])
+    }
+
+    @Test func speechTailFaceCoversTheInsetShadowAtItsJoin() {
+        let above = SessionBubbleLayout(sessionCount: 1, side: .above, isCollapsed: false)
+        let aboveFace = above.bubbleFrame.insetBy(dx: 2, dy: 2)
+        #expect(above.speechTailInteriorFrames()[0].maxY >= aboveFace.minY + 5)
+
+        let below = SessionBubbleLayout(sessionCount: 1, side: .below, isCollapsed: false)
+        let belowFace = below.bubbleFrame.insetBy(dx: 2, dy: 2)
+        #expect(below.speechTailInteriorFrames()[0].minY <= belowFace.maxY - 5)
     }
 }

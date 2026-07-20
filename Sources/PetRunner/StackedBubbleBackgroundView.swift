@@ -40,7 +40,7 @@ final class StackedBubbleBackgroundView: NSView {
             bubble,
             tailFrames: layout.speechTailFrames(),
             tailInteriorFrames: layout.speechTailInteriorFrames(),
-            fill: .white
+            side: layout.side
         )
 
         drawMinimizeBar(in: layout.collapseControlFrame)
@@ -100,27 +100,96 @@ final class StackedBubbleBackgroundView: NSView {
         _ rect: CGRect,
         tailFrames: [CGRect],
         tailInteriorFrames: [CGRect],
-        fill: NSColor
+        side: ThoughtBubbleSide
     ) {
-        let shadowOffset = CGSize(width: 4, height: -4)
-        NSColor(calibratedRed: 0.35, green: 0.21, blue: 0.13, alpha: 1).setFill()
-        pixelRoundedPath(in: rect.offsetBy(dx: shadowOffset.width, dy: shadowOffset.height)).fill()
-        for tail in tailFrames {
-            NSBezierPath(rect: tail.offsetBy(dx: shadowOffset.width, dy: shadowOffset.height)).fill()
+        let outline = NSColor(calibratedRed: 0.10, green: 0.09, blue: 0.25, alpha: 1)
+        let face = NSColor(calibratedRed: 0.99, green: 0.99, blue: 1.00, alpha: 1)
+        let highlight = NSColor(calibratedRed: 0.84, green: 0.89, blue: 0.96, alpha: 1)
+        let shade = NSColor(calibratedRed: 0.62, green: 0.70, blue: 0.83, alpha: 1)
+
+        outline.setFill()
+        pixelSpeechBubblePath(in: rect, tailFrames: tailFrames).fill()
+        face.setFill()
+        pixelSpeechBubblePath(in: rect.insetBy(dx: 2, dy: 2), tailFrames: tailInteriorFrames).fill()
+
+        drawBubbleInsetShadow(
+            in: rect,
+            tailInteriorFrames: tailInteriorFrames,
+            side: side,
+            highlight: highlight,
+            shade: shade
+        )
+    }
+
+    private func drawBubbleInsetShadow(
+        in rect: CGRect,
+        tailInteriorFrames: [CGRect],
+        side: ThoughtBubbleSide,
+        highlight: NSColor,
+        shade: NSColor
+    ) {
+        let interior = rect.insetBy(dx: 2, dy: 2)
+        let mediumBand: CGRect
+        let lightBand: CGRect
+        switch side {
+        case .above:
+            mediumBand = CGRect(x: interior.minX, y: interior.minY, width: interior.width, height: 3)
+            lightBand = CGRect(x: interior.minX, y: interior.minY + 3, width: interior.width, height: 2)
+        case .below:
+            mediumBand = CGRect(x: interior.minX, y: interior.maxY - 3, width: interior.width, height: 3)
+            lightBand = CGRect(x: interior.minX, y: interior.maxY - 5, width: interior.width, height: 2)
         }
 
-        NSColor.black.setFill()
-        pixelRoundedPath(in: rect).fill()
-        fill.setFill()
-        pixelRoundedPath(in: rect.insetBy(dx: 2, dy: 2)).fill()
+        let clip = pixelSpeechBubblePath(in: interior, tailFrames: tailInteriorFrames)
+        NSGraphicsContext.saveGraphicsState()
+        clip.addClip()
+        shade.setFill()
+        fillInsetBand(mediumBand, avoiding: tailInteriorFrames.first)
+        highlight.setFill()
+        fillInsetBand(lightBand, avoiding: tailInteriorFrames.first)
+        // The first tail step overlaps the bubble face. Leaving it unshaded
+        // makes the join read as one continuous surface.
+        drawTailInsetShadow(in: Array(tailInteriorFrames.dropFirst()), highlight: highlight, shade: shade)
+        NSGraphicsContext.restoreGraphicsState()
+    }
 
-        NSColor.black.setFill()
-        for tail in tailFrames {
-            NSBezierPath(rect: tail).fill()
+    private func fillInsetBand(_ band: CGRect, avoiding tailJoin: CGRect?) {
+        guard let tailJoin, band.intersects(tailJoin) else {
+            NSBezierPath(rect: band).fill()
+            return
         }
-        fill.setFill()
-        for tail in tailInteriorFrames {
-            NSBezierPath(rect: tail).fill()
+
+        let join = band.intersection(tailJoin)
+        if band.minX < join.minX {
+            NSBezierPath(rect: CGRect(x: band.minX, y: band.minY, width: join.minX - band.minX, height: band.height)).fill()
+        }
+        if join.maxX < band.maxX {
+            NSBezierPath(rect: CGRect(x: join.maxX, y: band.minY, width: band.maxX - join.maxX, height: band.height)).fill()
+        }
+    }
+
+    private func pixelSpeechBubblePath(in rect: CGRect, tailFrames: [CGRect]) -> NSBezierPath {
+        let path = pixelRoundedPath(in: rect)
+        for tail in tailFrames {
+            path.append(NSBezierPath(rect: tail))
+        }
+        return path
+    }
+
+    private func drawTailInsetShadow(
+        in tailInteriorFrames: [CGRect],
+        highlight: NSColor,
+        shade: NSColor
+    ) {
+        for frame in tailInteriorFrames {
+            let shadeWidth = min(2, frame.width)
+            shade.setFill()
+            NSBezierPath(rect: CGRect(x: frame.maxX - shadeWidth, y: frame.minY, width: shadeWidth, height: frame.height)).fill()
+
+            let highlightWidth = min(2, max(frame.width - shadeWidth, 0))
+            guard highlightWidth > 0 else { continue }
+            highlight.setFill()
+            NSBezierPath(rect: CGRect(x: frame.maxX - shadeWidth - highlightWidth, y: frame.minY, width: highlightWidth, height: frame.height)).fill()
         }
     }
 

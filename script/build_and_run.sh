@@ -24,6 +24,15 @@ cp "$BUILD_BINARY" "$APP_BINARY"
 cp "$ROOT_DIR/Support/Info.plist" "$APP_CONTENTS/Info.plist"
 cp "$ROOT_DIR/Assets/AppIcon.icns" "$APP_RESOURCES/AppIcon.icns"
 chmod +x "$APP_BINARY"
+codesign \
+  --force \
+  --deep \
+  --options runtime \
+  --timestamp=none \
+  --identifier "$BUNDLE_ID" \
+  --sign - \
+  "$APP_BUNDLE"
+codesign --verify --deep --strict "$APP_BUNDLE"
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
