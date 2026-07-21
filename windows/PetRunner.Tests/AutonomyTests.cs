@@ -87,7 +87,7 @@ internal static class AutonomyTests
 
         Check.True(policy.Tick(30, false) is null, "Ineligible ticks must not schedule work");
         Check.True(policy.Tick(30, true) is null, "Pet should start a fresh wait after becoming eligible");
-        Check.True(policy.Tick(40, true) is { } action && action.Kind == AutonomousActionKind.Walk,
+        Check.True(policy.Tick(40, true) is { } rescheduledAction && rescheduledAction.Kind == AutonomousActionKind.Walk,
             "Ineligible ticks must discard the pending deadline");
     }
 
