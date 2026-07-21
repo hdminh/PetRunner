@@ -1,0 +1,66 @@
+name: Publish Packages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      publish_npm:
+        description: Publish to npm (requires the configured trusted publisher)
+        required: true
+        default: false
+        type: boolean
+      publish_github:
+        description: Publish to GitHub Packages
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.14.0
+          cache: npm
+      - run: npm test
+      - run: npm pack --dry-run
+      - name: Check release tag version
+        if: github.event_name == 'release'
+        run: test "v$(node -p \"require('./package.json').version\")" = "${{ github.event.release.tag_name }}"
+
+  publish-npm:
+    needs: verify
+    if: github.event_name == 'release' || inputs.publish_npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.14.0
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: npm publish --access public
+
+  publish-github:
+    needs: verify
+    if: github.event_name == 'release' || inputs.publish_github
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.14.0
+          registry-url: https://npm.pkg.github.com
+          scope: '@hdminh'
+          cache: npm
+      - run: npm publish --registry=https://npm.pkg.github.com
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

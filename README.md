@@ -30,6 +30,15 @@ npx pet-runner update
 npx pet-runner uninstall
 ```
 
+## Publishing packages
+
+GitHub Releases run `.github/workflows/publish-packages.yml`, which publishes
+to npm and GitHub Packages. Before the first automated npm release, configure
+`@hdminh/pet-runner` on npmjs.com with trusted publisher `hdminh/PetRunner` and
+workflow filename `publish-packages.yml`. To backfill GitHub Packages without
+republishing npm, manually run the workflow with only **Publish to GitHub
+Packages** enabled.
+
 ## Optional agent monitor (macOS)
 
 Choose **Agent Monitor → Enable Agent Monitor** in the menu bar to explicitly select any
