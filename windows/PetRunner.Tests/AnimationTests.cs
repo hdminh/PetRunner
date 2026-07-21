@@ -19,6 +19,7 @@ internal static class AnimationTests
         playback.Advance(AnimationContract.FrameDurations(AnimationState.Idle)[3]);
         Check.Equal(4, playback.FrameIndex);
 
+        playback = new AnimationPlayback();
         playback.Start(AnimationState.Jumping);
         var jumpCycle = AnimationContract.FrameDurations(AnimationState.Jumping).Sum();
         playback.Advance(jumpCycle * 3 - 0.01);
