@@ -24,7 +24,7 @@ internal sealed class SettingsWindow : Window
         Content = panel;
         panel.Children.Add(new WpfControls.TextBlock { Text = "Autonomous Pet", FontWeight = FontWeights.SemiBold });
         panel.Children.Add(new WpfControls.TextBlock { Text = "Wait between actions", Margin = new Thickness(0, 12, 0, 4) });
-        var waits = new WpfControls.StackPanel { Orientation = Orientation.Horizontal };
+        var waits = new WpfControls.StackPanel { Orientation = WpfControls.Orientation.Horizontal };
         for (var seconds = 5; seconds <= 30; seconds++)
         {
             minimumWait.Items.Add(seconds);
@@ -46,7 +46,7 @@ internal sealed class SettingsWindow : Window
             panel.Children.Add(box);
         }
 
-        var buttons = new WpfControls.StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
+        var buttons = new WpfControls.StackPanel { Orientation = WpfControls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
         var cancel = new WpfControls.Button { Content = "Cancel", MinWidth = 80, Margin = new Thickness(0, 0, 8, 0) };
         cancel.Click += (_, _) => Close();
         var apply = new WpfControls.Button { Content = "Save", MinWidth = 80, IsDefault = true };
@@ -62,7 +62,7 @@ internal sealed class SettingsWindow : Window
         if (minimumWait.SelectedItem is not int minimum || maximumWait.SelectedItem is not int maximum ||
             !AutonomyConfiguration.TryCreate(minimum, maximum, enabled, out var configuration))
         {
-            MessageBox.Show(this, "Choose at least one action and a valid wait range.", "PetRunner Settings", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show(this, "Choose at least one action and a valid wait range.", "PetRunner Settings", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         save(configuration!);
