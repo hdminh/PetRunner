@@ -20,7 +20,17 @@ script is required.
 Requirements:
 
 - macOS 14 or later with Xcode Command Line Tools
-- Windows 10/11 x64 with the .NET 10 SDK
+- Windows 10/11 x64
+
+For a downloaded Windows installer rather than the npm/source workflow, run
+`PetRunner-<version>-windows-x64-setup.exe`. It installs a Start-menu entry
+and uninstaller and does not require .NET or the Visual C++ runtime.
+
+The Windows npm workflow is for developers: it builds the native app locally
+and requires Visual Studio C++ Build Tools, CMake, Ninja, and vcpkg.
+
+Windows releases also include an x64 Microsoft Store `.msix` package. It is a
+full-trust desktop package, and the Store signs it during submission.
 
 Other commands:
 
@@ -91,10 +101,11 @@ swift test
 PETRUNNER_RUN_INSTALLED_PET_TESTS=1 swift test --filter InstalledPetsIntegrationTests
 ```
 
-Windows:
+Windows native:
 
 ```powershell
-dotnet run --project windows\PetRunner.Tests\PetRunner.Tests.csproj
+cmake -S windows\native -B .build\windows-native -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static
+ctest --test-dir .build\windows-native --output-on-failure
 ```
 
 ## License

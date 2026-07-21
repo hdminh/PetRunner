@@ -134,13 +134,32 @@ If `swift` or `xcrun` is missing after installing the tools, run
 Requirements:
 
 - 64-bit Windows 10 or Windows 11
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- Visual Studio 2022 Build Tools with **Desktop development with C++**
+- CMake 3.25+, Ninja, and [vcpkg](https://learn.microsoft.com/vcpkg/get_started/get-started-vs) with `VCPKG_ROOT` set
 - PowerShell 5.1 or later
 
-Confirm the SDK is available:
+The released x64 installer is native and has no .NET or Visual C++ runtime
+prerequisite.
+
+To create the installer from a checkout, also install [Inno Setup 6](https://jrsoftware.org/isinfo.php), then run:
 
 ```powershell
-dotnet --info
+.\script\package_windows.ps1
+```
+
+This writes per-architecture setup programs to `dist\installer`. They install
+PetRunner for the current user, add a Start-menu shortcut and an uninstall entry,
+and optionally add a desktop shortcut.
+
+The same command also writes `dist\msix\PetRunner-<version>-windows-x64-store.msix`
+for Microsoft Store submission. The MSIX manifest uses the reserved Partner
+Center identity for PetRunner; submit that `.msix` on the **Packages** page.
+
+Confirm the native toolchain is available:
+
+```powershell
+cmake --version
+ninja --version
 ```
 
 From the repository root, build and run PetRunner:
@@ -178,7 +197,8 @@ PETRUNNER_RUN_INSTALLED_PET_TESTS=1 swift test --filter InstalledPetsIntegration
 Windows:
 
 ```powershell
-dotnet run --project windows\PetRunner.Tests\PetRunner.Tests.csproj
+cmake -S windows\native -B .build\windows-native -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static
+ctest --test-dir .build\windows-native --output-on-failure
 ```
 
 ## Common issues
@@ -188,8 +208,8 @@ dotnet run --project windows\PetRunner.Tests\PetRunner.Tests.csproj
 - **A v2 pet is rejected:** its manifest must contain `spriteVersionNumber: 2`
   and its atlas must be exactly 1536 × 2288 pixels.
 - **macOS build tools are missing:** run `xcode-select --install`.
-- **Windows reports an incompatible target framework:** install the .NET 10
-  SDK, not only the .NET runtime.
+- **Windows source build cannot configure:** install the C++ Build Tools, CMake,
+  Ninja, and set `VCPKG_ROOT` to your vcpkg checkout.
 - **The app is already open:** rerun the platform script; it stops the previous
   PetRunner process before starting the new build.
 - **Monitoring does not show a bubble:** make sure PetRunner is running; hooks

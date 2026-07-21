@@ -22,38 +22,39 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: "10.0.x"
+      - uses: lukka/run-vcpkg@v11
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
       - name: Test and publish
         shell: pwsh
         run: ./script/package_windows.ps1
-      - name: Upload executable
+      - name: Upload Windows packages
         uses: actions/upload-artifact@v7
         with:
           name: PetRunner-Windows
           path: |
-            dist/win-x64/PetRunner.exe
-            dist/win-x64/PetRunner.exe.sha256
-            dist/win-arm64/PetRunner.exe
-            dist/win-arm64/PetRunner.exe.sha256
+            dist/installer/PetRunner-*-windows-x64-setup.exe
+            dist/installer/PetRunner-*-windows-x64-setup.exe.sha256
+            dist/msix/PetRunner-*-windows-x64-store.msix
+            dist/msix/PetRunner-*-windows-x64-store.msix.sha256
           if-no-files-found: error
       - name: Prepare release assets
         if: inputs.release_tag != ''
         shell: pwsh
         run: |
           $Tag = "${{ inputs.release_tag }}"
-          Copy-Item "dist/win-x64/PetRunner.exe" "PetRunner-$Tag-windows-x64.exe"
-          Copy-Item "dist/win-x64/PetRunner.exe.sha256" "PetRunner-$Tag-windows-x64.exe.sha256"
-          Copy-Item "dist/win-arm64/PetRunner.exe" "PetRunner-$Tag-windows-arm64.exe"
-          Copy-Item "dist/win-arm64/PetRunner.exe.sha256" "PetRunner-$Tag-windows-arm64.exe.sha256"
+          Copy-Item "dist/installer/PetRunner-*-windows-x64-setup.exe" "PetRunner-$Tag-windows-x64-setup.exe"
+          Copy-Item "dist/installer/PetRunner-*-windows-x64-setup.exe.sha256" "PetRunner-$Tag-windows-x64-setup.exe.sha256"
+          Copy-Item "dist/msix/PetRunner-*-windows-x64-store.msix" "PetRunner-$Tag-windows-x64-store.msix"
+          Copy-Item "dist/msix/PetRunner-*-windows-x64-store.msix.sha256" "PetRunner-$Tag-windows-x64-store.msix.sha256"
       - name: Upload release assets
         if: inputs.release_tag != ''
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.release_tag }}
           files: |
-            PetRunner-${{ inputs.release_tag }}-windows-x64.exe
-            PetRunner-${{ inputs.release_tag }}-windows-x64.exe.sha256
-            PetRunner-${{ inputs.release_tag }}-windows-arm64.exe
-            PetRunner-${{ inputs.release_tag }}-windows-arm64.exe.sha256
+            PetRunner-${{ inputs.release_tag }}-windows-x64-setup.exe
+            PetRunner-${{ inputs.release_tag }}-windows-x64-setup.exe.sha256
+            PetRunner-${{ inputs.release_tag }}-windows-x64-store.msix
+            PetRunner-${{ inputs.release_tag }}-windows-x64-store.msix.sha256

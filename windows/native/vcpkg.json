@@ -1,0 +1,8 @@
+{
+  "name": "petrunner-native",
+  "version-string": "0.2.2",
+  "dependencies": [
+    "libwebp",
+    "nlohmann-json"
+  ]
+}
