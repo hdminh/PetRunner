@@ -43,7 +43,11 @@ public sealed class SpriteAtlas : IDisposable
                 address.Row * CellHeight,
                 (address.Column + 1) * CellWidth,
                 (address.Row + 1) * CellHeight);
-            canvas.DrawBitmap(image, source, new SKRect(0, 0, CellWidth, CellHeight));
+            canvas.DrawBitmap(
+                image,
+                source,
+                new SKRect(0, 0, CellWidth, CellHeight),
+                new SKSamplingOptions());
         }
         using var snapshot = SKImage.FromBitmap(frame);
         using var data = snapshot.Encode(SKEncodedImageFormat.Png, 100);
