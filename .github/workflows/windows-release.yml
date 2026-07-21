@@ -2,6 +2,11 @@ name: Windows Release
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing GitHub Release tag to receive the Windows assets
+        required: false
+        type: string
   push:
     paths:
       - "windows/**"
@@ -9,7 +14,7 @@ on:
       - ".github/workflows/windows-release.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-windows-x64:
@@ -33,3 +38,22 @@ jobs:
             dist/win-arm64/PetRunner.exe
             dist/win-arm64/PetRunner.exe.sha256
           if-no-files-found: error
+      - name: Prepare release assets
+        if: inputs.release_tag != ''
+        shell: pwsh
+        run: |
+          $Tag = "${{ inputs.release_tag }}"
+          Copy-Item "dist/win-x64/PetRunner.exe" "PetRunner-$Tag-windows-x64.exe"
+          Copy-Item "dist/win-x64/PetRunner.exe.sha256" "PetRunner-$Tag-windows-x64.exe.sha256"
+          Copy-Item "dist/win-arm64/PetRunner.exe" "PetRunner-$Tag-windows-arm64.exe"
+          Copy-Item "dist/win-arm64/PetRunner.exe.sha256" "PetRunner-$Tag-windows-arm64.exe.sha256"
+      - name: Upload release assets
+        if: inputs.release_tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          files: |
+            PetRunner-${{ inputs.release_tag }}-windows-x64.exe
+            PetRunner-${{ inputs.release_tag }}-windows-x64.exe.sha256
+            PetRunner-${{ inputs.release_tag }}-windows-arm64.exe
+            PetRunner-${{ inputs.release_tag }}-windows-arm64.exe.sha256
