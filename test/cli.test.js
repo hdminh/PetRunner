@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { parseArguments, resolveInstallPaths, uninstall } from "../lib/cli.js";
@@ -14,7 +15,8 @@ test("start is the default command", () => {
 
 test("bin entrypoint reports the package version", () => {
   const output = execFileSync(process.execPath, ["bin/pet-runner.js", "--version"], { encoding: "utf8" });
-  assert.equal(output.trim(), "0.2.0");
+  const packageVersion = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+  assert.equal(output.trim(), packageVersion);
 });
 
 test("parses a custom pet directory", () => {

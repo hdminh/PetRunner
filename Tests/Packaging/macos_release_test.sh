@@ -2,7 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-DMG="${1:-$ROOT_DIR/dist/release/PetRunner-0.2.0-macos-universal.dmg}"
+VERSION="$(plutil -extract CFBundleShortVersionString raw "$ROOT_DIR/Support/Info.plist")"
+DMG="${1:-$ROOT_DIR/dist/release/PetRunner-$VERSION-macos-universal.dmg}"
 CHECKSUM="$DMG.sha256"
 
 test -f "$DMG"
