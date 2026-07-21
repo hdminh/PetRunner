@@ -22,6 +22,7 @@ internal sealed class OverlayWindow : Window, IDisposable
     private PetDescriptor? pet;
     private MotionState? motion;
     private AutonomyPolicy autonomy = new();
+    private bool autonomyEnabled = true;
     private AutonomousWalk? autonomousWalk;
     private bool autonomousAnimationActive;
     private double previousTick;
@@ -62,6 +63,30 @@ internal sealed class OverlayWindow : Window, IDisposable
     }
 
     public Action<double, double>? PositionChanged { get; set; }
+
+    public void SetAutonomyEnabled(bool enabled)
+    {
+        autonomyEnabled = enabled;
+        CancelAutonomy();
+        Render();
+    }
+
+    public void SetAutonomyConfiguration(AutonomyConfiguration configuration)
+    {
+        autonomy.Update(configuration);
+        CancelAutonomy();
+        Render();
+    }
+
+    public void ResetPositionToDefault()
+    {
+        if (!IsVisible) return;
+        var area = ScreenBounds.WorkingArea(this);
+        Left = area.X + area.Width - Width - 32;
+        Top = area.Y + area.Height - Height - 32;
+        ClampToScreen();
+        PositionChanged?.Invoke(Left, Top);
+    }
 
     public void ShowPet(PetDescriptor descriptor, double width, (double Left, double Top)? savedPosition)
     {
@@ -175,7 +200,7 @@ internal sealed class OverlayWindow : Window, IDisposable
     private void OnPointerEnter(object sender, System.Windows.Input.MouseEventArgs args)
     {
         CancelAutonomy();
-        if (interacting || motion is not null || playback.State != AnimationState.Idle) return;
+        if (!autonomyEnabled || interacting || motion is not null || playback.State != AnimationState.Idle) return;
         if (autonomy.StartAction() is not { } action) return;
         PerformAutonomousAction(action);
         Render();
@@ -310,7 +335,7 @@ internal sealed class OverlayWindow : Window, IDisposable
     }
 
     private bool IsAutonomyEligible =>
-        IsVisible && !interacting && !resizing && motion is null && autonomousWalk is null &&
+        IsVisible && autonomyEnabled && !interacting && !resizing && motion is null && autonomousWalk is null &&
         !autonomousAnimationActive && playback.State == AnimationState.Idle;
 
     private void StartAutonomousWalk(double duration)

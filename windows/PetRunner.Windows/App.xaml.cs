@@ -18,7 +18,10 @@ public partial class App : System.Windows.Application
         petsPath = ResolvePetsPath(args.Args);
         settings = SettingsStore.Load();
         overlay = new OverlayWindow();
-        tray = new TrayController(ChangePet, ChangeSize, Reload, Quit);
+        settings.SetAutonomyConfiguration(settings.GetAutonomyConfiguration());
+        overlay.SetAutonomyEnabled(settings.AutonomyEnabled);
+        overlay.SetAutonomyConfiguration(settings.GetAutonomyConfiguration());
+        tray = new TrayController(ChangePet, ChangeSize, Reload, ToggleAutonomy, ResetPosition, OpenSettings, Quit);
         Reload();
     }
 
@@ -36,7 +39,7 @@ public partial class App : System.Windows.Application
         {
             ShowPet(selected, restorePosition: true);
         }
-        tray?.Update(pets, failures, selected?.Id, settings.Width);
+        RefreshTray(selected?.Id);
     }
 
     private void ChangePet(string id)
@@ -44,7 +47,7 @@ public partial class App : System.Windows.Application
         var pet = pets.FirstOrDefault(candidate => candidate.Id == id);
         if (pet is null) return;
         ShowPet(pet, restorePosition: false);
-        tray?.Update(pets, failures, pet.Id, settings.Width);
+        RefreshTray(pet.Id);
     }
 
     private void ShowPet(PetDescriptor pet, bool restorePosition)
@@ -78,8 +81,36 @@ public partial class App : System.Windows.Application
         settings.Width = width;
         overlay?.SetWidth(width);
         SettingsStore.Save(settings);
-        tray?.Update(pets, failures, settings.SelectedPetId, width);
+        RefreshTray(settings.SelectedPetId);
     }
+
+    private void ToggleAutonomy()
+    {
+        settings.AutonomyEnabled = !settings.AutonomyEnabled;
+        overlay?.SetAutonomyEnabled(settings.AutonomyEnabled);
+        SettingsStore.Save(settings);
+        RefreshTray(settings.SelectedPetId);
+    }
+
+    private void ResetPosition()
+    {
+        overlay?.ResetPositionToDefault();
+    }
+
+    private void OpenSettings()
+    {
+        var window = new SettingsWindow(settings, configuration =>
+        {
+            settings.SetAutonomyConfiguration(configuration);
+            overlay?.SetAutonomyConfiguration(configuration);
+            SettingsStore.Save(settings);
+        });
+        window.Show();
+        window.Activate();
+    }
+
+    private void RefreshTray(string? selectedId) =>
+        tray?.Update(pets, failures, selectedId, settings.Width, settings.AutonomyEnabled);
 
     private void Quit()
     {

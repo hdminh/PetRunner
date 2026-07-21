@@ -6,10 +6,31 @@ internal static class AutonomyTests
 {
     public static void Run()
     {
+        ConfigurationValidatesBoundsAndFiltersActions();
         SchedulesWithinApprovedBounds();
         SelectsConfiguredActionsFromWeights();
         ImmediatelyStartsAnActionUsingTheConfiguredWeights();
         CancellationDiscardsPendingWait();
+        UpdatingConfigurationCancelsAnExistingWait();
+    }
+
+    private static void ConfigurationValidatesBoundsAndFiltersActions()
+    {
+        Check.True(!AutonomyConfiguration.TryCreate(4, 20, [AutonomousActionKind.Walk], out _),
+            "Waits below five seconds must be rejected");
+        Check.True(!AutonomyConfiguration.TryCreate(10, 31, [AutonomousActionKind.Walk], out _),
+            "Waits above thirty seconds must be rejected");
+        Check.True(!AutonomyConfiguration.TryCreate(20, 10, [AutonomousActionKind.Walk], out _),
+            "The minimum wait cannot exceed the maximum");
+        Check.True(!AutonomyConfiguration.TryCreate(10, 20, [], out _),
+            "At least one autonomous action must be enabled");
+
+        Check.True(AutonomyConfiguration.TryCreate(10, 10, [AutonomousActionKind.Cry], out var configuration),
+            "A bounded single-action configuration should be valid");
+        var units = new Queue<double>(new[] { 0d, 0d });
+        var policy = new AutonomyPolicy(configuration, () => units.Dequeue());
+        Check.True(policy.Tick(0, true) is null, "First eligible tick should schedule autonomy");
+        Check.Equal(AutonomousActionKind.Cry, policy.Tick(10, true)!.Value.Kind);
     }
 
     private static void SchedulesWithinApprovedBounds()
@@ -68,5 +89,16 @@ internal static class AutonomyTests
         Check.True(policy.Tick(30, true) is null, "Pet should start a fresh wait after becoming eligible");
         Check.True(policy.Tick(40, true) is { } action && action.Kind == AutonomousActionKind.Walk,
             "Ineligible ticks must discard the pending deadline");
+    }
+
+    private static void UpdatingConfigurationCancelsAnExistingWait()
+    {
+        var policy = new AutonomyPolicy(() => 0);
+        policy.Tick(0, true);
+        Check.True(AutonomyConfiguration.TryCreate(10, 10, [AutonomousActionKind.Wave], out var configuration),
+            "The wave-only configuration should be valid");
+        policy.Update(configuration!);
+        Check.True(policy.Tick(10, true) is null, "Updating configuration must discard the existing wait");
+        Check.Equal(AutonomousActionKind.Wave, policy.Tick(20, true)!.Value.Kind);
     }
 }

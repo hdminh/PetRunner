@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using PetRunner.Core;
 
 namespace PetRunner.Windows;
 
@@ -9,6 +10,28 @@ internal sealed class AppSettings
     public double Width { get; set; } = 112;
     public double? Left { get; set; }
     public double? Top { get; set; }
+    public bool AutonomyEnabled { get; set; } = true;
+    public double AutonomyMinimumWait { get; set; } = AutonomyPolicy.MinimumWait;
+    public double AutonomyMaximumWait { get; set; } = AutonomyPolicy.MaximumWait;
+    public AutonomousActionKind[] EnabledAutonomousActions { get; set; } = Enum.GetValues<AutonomousActionKind>();
+
+    public AutonomyConfiguration GetAutonomyConfiguration()
+    {
+        return AutonomyConfiguration.TryCreate(
+            AutonomyMinimumWait,
+            AutonomyMaximumWait,
+            EnabledAutonomousActions ?? [],
+            out var configuration)
+            ? configuration!
+            : AutonomyConfiguration.Default;
+    }
+
+    public void SetAutonomyConfiguration(AutonomyConfiguration configuration)
+    {
+        AutonomyMinimumWait = configuration.MinimumWait;
+        AutonomyMaximumWait = configuration.MaximumWait;
+        EnabledAutonomousActions = configuration.EnabledActions.ToArray();
+    }
 }
 
 internal static class SettingsStore

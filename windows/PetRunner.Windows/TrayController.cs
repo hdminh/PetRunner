@@ -10,16 +10,29 @@ internal sealed class TrayController : IDisposable
     private readonly Action<string> changePet;
     private readonly Action<double> changeSize;
     private readonly Action reload;
+    private readonly Action toggleAutonomy;
+    private readonly Action resetPosition;
+    private readonly Action openSettings;
     private readonly Action quit;
     private readonly Icon applicationIcon;
     private readonly NotifyIcon icon;
     private readonly Dictionary<string, Image> thumbnails = [];
 
-    public TrayController(Action<string> changePet, Action<double> changeSize, Action reload, Action quit)
+    public TrayController(
+        Action<string> changePet,
+        Action<double> changeSize,
+        Action reload,
+        Action toggleAutonomy,
+        Action resetPosition,
+        Action openSettings,
+        Action quit)
     {
         this.changePet = changePet;
         this.changeSize = changeSize;
         this.reload = reload;
+        this.toggleAutonomy = toggleAutonomy;
+        this.resetPosition = resetPosition;
+        this.openSettings = openSettings;
         this.quit = quit;
         applicationIcon = LoadApplicationIcon();
         icon = new NotifyIcon
@@ -42,7 +55,8 @@ internal sealed class TrayController : IDisposable
         IReadOnlyList<PetDescriptor> pets,
         IReadOnlyList<PetFailure> failures,
         string? selectedId,
-        double selectedWidth)
+        double selectedWidth,
+        bool autonomyEnabled)
     {
         foreach (var image in thumbnails.Values) image.Dispose();
         thumbnails.Clear();
@@ -65,6 +79,16 @@ internal sealed class TrayController : IDisposable
             sizeMenu.DropDownItems.Add(item);
         }
         menu.Items.Add(sizeMenu);
+
+        var autonomyItem = new ToolStripMenuItem("Autonomous Pet") { Checked = autonomyEnabled };
+        autonomyItem.Click += (_, _) => toggleAutonomy();
+        menu.Items.Add(autonomyItem);
+        var resetItem = new ToolStripMenuItem("Reset Position");
+        resetItem.Click += (_, _) => resetPosition();
+        menu.Items.Add(resetItem);
+        var settingsItem = new ToolStripMenuItem("Settings…");
+        settingsItem.Click += (_, _) => openSettings();
+        menu.Items.Add(settingsItem);
 
         if (failures.Count > 0)
         {
