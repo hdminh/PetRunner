@@ -38,10 +38,16 @@ npm pack --dry-run
 dotnet run --project windows/PetRunner.Tests/PetRunner.Tests.csproj
 .\script\build_and_run.ps1
 .\script\package_windows.ps1
+.\script\package_windows_msix.ps1
 ```
 
 `script/build_and_run.sh` stages a debug app at `dist/PetRunner.app` and opens
 it. `script/package_macos_release.sh` makes a universal, ad-hoc-signed DMG.
+`script/package_windows.ps1` publishes self-contained `PetRunner.exe` builds.
+`script/package_windows_msix.ps1` builds Partner Center–ready `.msix` packages
+(Windows + Windows SDK `MakeAppx` required; Parallels VM is fine). Supply the
+Partner Center identity, publisher, and publisher display name as arguments;
+they are deliberately not stored in the repository.
 `dist/`, `.build/`, and nested .NET `bin/`/`obj/` outputs are generated and
 ignored. The top-level `bin/` directory is npm CLI source and is committed.
 

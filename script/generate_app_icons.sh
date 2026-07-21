@@ -41,3 +41,15 @@ make_png 1024 icon_512x512@2x.png
 
 iconutil -c icns "$ICONSET" -o "$ASSETS/AppIcon.icns"
 magick "$MASTER" -define icon:auto-resize=256,128,64,48,32,16 "$ASSETS/AppIcon.ico"
+
+MSIX_ASSETS="$ROOT_DIR/windows/PetRunner.Package/Assets"
+mkdir -p "$MSIX_ASSETS"
+sips -z 50 50 "$MASTER" --out "$MSIX_ASSETS/StoreLogo.png" >/dev/null
+sips -z 44 44 "$MASTER" --out "$MSIX_ASSETS/Square44x44Logo.png" >/dev/null
+sips -z 71 71 "$MASTER" --out "$MSIX_ASSETS/Square71x71Logo.png" >/dev/null
+sips -z 150 150 "$MASTER" --out "$MSIX_ASSETS/Square150x150Logo.png" >/dev/null
+sips -z 310 310 "$MASTER" --out "$MSIX_ASSETS/Square310x310Logo.png" >/dev/null
+magick "$MASTER" -resize 128x128 -background none -gravity center -extent 310x150 \
+  "$MSIX_ASSETS/Wide310x150Logo.png"
+magick "$MASTER" -resize 200x200 -background none -gravity center -extent 620x300 \
+  "$MSIX_ASSETS/SplashScreen.png"

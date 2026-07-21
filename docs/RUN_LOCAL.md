@@ -181,6 +181,28 @@ Windows:
 dotnet run --project windows\PetRunner.Tests\PetRunner.Tests.csproj
 ```
 
+### Windows Store / Partner Center (MSIX)
+
+Requirements on Windows 10/11 (including a Parallels VM):
+
+- .NET 10 SDK
+- Windows 10/11 SDK (`MakeAppx.exe`; Visual Studio “Windows application
+  development” workload is enough)
+
+Pass the Partner Center values explicitly; they are not stored in the
+repository:
+
+```powershell
+.\script\package_windows_msix.ps1 `
+  -IdentityName "<partner-center-identity>" `
+  -Publisher "<partner-center-publisher>" `
+  -PublisherDisplayName "<publisher-display-name>"
+```
+
+Output lands in `dist\msix\` (per-architecture `.msix`, optional `-Bundle` for
+`.msixbundle`). Signing is optional for Store upload; pass `-CertPath` only for
+local sideload testing.
+
 ## Common issues
 
 - **No pet appears:** confirm the pet directory exists and contains one folder
