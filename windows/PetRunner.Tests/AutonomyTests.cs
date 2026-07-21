@@ -27,8 +27,9 @@ internal static class AutonomyTests
 
         Check.True(AutonomyConfiguration.TryCreate(10, 10, [AutonomousActionKind.Cry], out var configuration),
             "A bounded single-action configuration should be valid");
+        Check.True(configuration is not null, "A valid configuration should be created");
         var units = new Queue<double>(new[] { 0d, 0d });
-        var policy = new AutonomyPolicy(configuration, () => units.Dequeue());
+        var policy = new AutonomyPolicy(configuration!, () => units.Dequeue());
         Check.True(policy.Tick(0, true) is null, "First eligible tick should schedule autonomy");
         Check.Equal(AutonomousActionKind.Cry, policy.Tick(10, true)!.Value.Kind);
     }
