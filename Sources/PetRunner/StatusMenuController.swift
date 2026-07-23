@@ -14,7 +14,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     var onToggleAutonomy: (() -> Void)?
     var onQuit: (() -> Void)?
 
-    private let statusItem: NSStatusItem
+    private var statusItem: NSStatusItem?
     private let menu = NSMenu()
     private var pets: [PetDescriptor] = []
     private var failures: [PetFailure] = []
@@ -22,13 +22,33 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private var selectedWidth: CGFloat = 112
     private var monitorEnabled = false
     private var autonomyEnabled = true
+    /// Compact today-spend label for the Monitor-selected provider (e.g. `$15.37`).
+    /// `nil` hides the cost and shows the icon alone.
+    private var monitorSpendText: String?
     private var petSubmenu: NSMenu?
     private var previewView: PetPreviewMenuView?
     private var thumbnailCache: [ThumbnailKey: NSImage] = [:]
 
     override init() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
+        createStatusItem()
+        rebuildMenu()
+    }
+
+    func setVisible(_ isVisible: Bool) {
+        if isVisible {
+            guard statusItem == nil else { return }
+            createStatusItem()
+            rebuildMenu()
+        } else if let statusItem {
+            NSStatusBar.system.removeStatusItem(statusItem)
+            self.statusItem = nil
+        }
+    }
+
+    private func createStatusItem() {
+        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        self.statusItem = statusItem
         if
             let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
             let icon = NSImage(contentsOf: iconURL)
@@ -41,9 +61,33 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
                 accessibilityDescription: "PetRunner"
             )
         }
-        statusItem.button?.toolTip = "PetRunner"
+        statusItem.button?.imagePosition = .imageLeading
+        statusItem.button?.font = NSFont.menuBarFont(ofSize: 0)
         statusItem.menu = menu
-        rebuildMenu()
+        applyStatusItemAppearance()
+    }
+
+    /// Updates the menu-bar cost chip next to the PetRunner icon.
+    /// Pass `nil` when Monitor is off or no provider is selected.
+    func updateMonitorSpend(_ costText: String?) {
+        monitorSpendText = costText
+        applyStatusItemAppearance()
+    }
+
+    private func applyStatusItemAppearance() {
+        guard let statusItem else { return }
+        let button = statusItem.button
+        if let costText = monitorSpendText, !costText.isEmpty {
+            button?.title = costText
+            button?.toolTip = "PetRunner — today’s spend \(costText)"
+            button?.setAccessibilityTitle("PetRunner today’s spend \(costText)")
+            statusItem.length = NSStatusItem.variableLength
+        } else {
+            button?.title = ""
+            button?.toolTip = "PetRunner"
+            button?.setAccessibilityTitle("PetRunner")
+            statusItem.length = NSStatusItem.squareLength
+        }
     }
 
     func update(
@@ -63,6 +107,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         let activeKeys = Set(pets.map(thumbnailKey(for:)))
         thumbnailCache = thumbnailCache.filter { activeKeys.contains($0.key) }
         rebuildMenu()
+        applyStatusItemAppearance()
     }
 
     private func rebuildMenu() {
@@ -143,6 +188,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         let quit = NSMenuItem(title: "Quit PetRunner", action: #selector(quitApp), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
+        statusItem?.menu = menu
     }
 
     private func makePetSubmenu() -> NSMenu {

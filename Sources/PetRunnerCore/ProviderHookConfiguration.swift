@@ -25,6 +25,23 @@ public struct ProviderHookConfiguration: Sendable {
         }
     }
 
+    /// Provider config directory under the user home (e.g. `.claude`).
+    public var hooksDirectoryRelativePath: String {
+        switch provider {
+        case .claude: ".claude"
+        case .codex: ".codex"
+        case .cursor: ".cursor"
+        }
+    }
+
+    public func hooksDirectoryURL(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
+        home.appendingPathComponent(hooksDirectoryRelativePath, isDirectory: true)
+    }
+
+    public func configURL(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
+        home.appendingPathComponent(configRelativePath, isDirectory: false)
+    }
+
     public var events: [String] {
         switch provider {
         case .claude:

@@ -5,6 +5,12 @@ public struct ProviderHookInstallError: LocalizedError {
     public let path: String
     public let reason: String
 
+    public init(provider: AgentProvider, path: String, reason: String) {
+        self.provider = provider
+        self.path = path
+        self.reason = reason
+    }
+
     public var errorDescription: String? {
         "\(provider.displayLabel) hook configuration at \(path): \(reason)"
     }

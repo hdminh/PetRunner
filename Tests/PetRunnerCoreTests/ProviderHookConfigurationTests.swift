@@ -3,6 +3,28 @@ import PetRunnerCore
 import Testing
 
 struct ProviderHookConfigurationTests {
+    @Test(arguments: AgentProvider.allCases) func exposesHookDirectoryAndConfigPaths(provider: AgentProvider) {
+        let configuration = ProviderHookConfiguration(provider: provider)
+        let home = URL(fileURLWithPath: "/Users/demo", isDirectory: true)
+        let expectedDirectory: String
+        let expectedConfig: String
+        switch provider {
+        case .claude:
+            expectedDirectory = ".claude"
+            expectedConfig = ".claude/settings.json"
+        case .codex:
+            expectedDirectory = ".codex"
+            expectedConfig = ".codex/hooks.json"
+        case .cursor:
+            expectedDirectory = ".cursor"
+            expectedConfig = ".cursor/hooks.json"
+        }
+        #expect(configuration.hooksDirectoryRelativePath == expectedDirectory)
+        #expect(configuration.configRelativePath == expectedConfig)
+        #expect(configuration.hooksDirectoryURL(home: home).path == home.appendingPathComponent(expectedDirectory).path)
+        #expect(configuration.configURL(home: home).path == home.appendingPathComponent(expectedConfig).path)
+    }
+
     @Test(arguments: AgentProvider.allCases) func installIsIdempotentAndOwned(provider: AgentProvider) throws {
         let configuration = ProviderHookConfiguration(provider: provider)
         let once = try configuration.install(into: Data("{}".utf8), executablePath: "/Applications/Pet Runner.app/Contents/MacOS/PetRunner")

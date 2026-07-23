@@ -44,7 +44,8 @@ final class StackedBubbleBackgroundView: NSView {
         )
 
         drawMinimizeBar(in: layout.collapseControlFrame)
-        drawPixelText(providerLabel, at: CGPoint(x: layout.collapseControlFrame.maxX + 6, y: bubble.maxY - 8), scale: 1)
+        drawResetGlyph(in: layout.resetControlFrame)
+        drawPixelText(providerLabel, at: CGPoint(x: layout.resetControlFrame.maxX + 6, y: bubble.maxY - 8), scale: 1)
         drawPixelText(sessionPosition, at: CGPoint(x: layout.sessionPositionFrame.minX, y: layout.sessionPositionFrame.maxY - 1), scale: 1)
 
         drawNavigationButton(in: layout.previousControlFrame, pointingUp: true, enabled: canSelectPrevious)
@@ -232,6 +233,20 @@ final class StackedBubbleBackgroundView: NSView {
         let bar = CGRect(x: rect.minX + 2, y: rect.midY - 1.5, width: rect.width - 4, height: 3)
         NSColor.black.setFill()
         NSBezierPath(rect: bar).fill()
+    }
+
+    /// Compact pixel "x" that clears the stuck monitor session presentation.
+    private func drawResetGlyph(in rect: CGRect) {
+        let inset: CGFloat = 4
+        let path = NSBezierPath()
+        path.lineWidth = 2.5
+        path.lineCapStyle = .square
+        path.move(to: CGPoint(x: rect.minX + inset, y: rect.minY + inset))
+        path.line(to: CGPoint(x: rect.maxX - inset, y: rect.maxY - inset))
+        path.move(to: CGPoint(x: rect.maxX - inset, y: rect.minY + inset))
+        path.line(to: CGPoint(x: rect.minX + inset, y: rect.maxY - inset))
+        NSColor.black.setStroke()
+        path.stroke()
     }
 
     private func drawNavigationButton(in rect: CGRect, pointingUp: Bool, enabled: Bool) {
