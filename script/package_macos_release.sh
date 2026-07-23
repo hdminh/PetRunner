@@ -40,6 +40,9 @@ cp -R "$ROOT_DIR/Assets/DefaultPets" "$APP/Contents/Resources/DefaultPets"
 cp -R "$ROOT_DIR/DashboardWeb/dist" "$APP/Contents/Resources/DashboardWeb"
 chmod +x "$APP/Contents/MacOS/$APP_NAME"
 
+# Strip Finder/resource-fork xattrs that break codesign.
+xattr -cr "$APP"
+
 codesign \
   --force \
   --deep \
