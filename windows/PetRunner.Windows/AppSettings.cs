@@ -10,10 +10,13 @@ internal sealed class AppSettings
     public double Width { get; set; } = 112;
     public double? Left { get; set; }
     public double? Top { get; set; }
+    public string? PetsDirectory { get; set; }
     public bool AutonomyEnabled { get; set; } = true;
     public double AutonomyMinimumWait { get; set; } = AutonomyPolicy.MinimumWait;
     public double AutonomyMaximumWait { get; set; } = AutonomyPolicy.MaximumWait;
     public AutonomousActionKind[] EnabledAutonomousActions { get; set; } = Enum.GetValues<AutonomousActionKind>();
+    public ProviderBudgetSettings ClaudeBudget { get; set; } = new();
+    public ProviderBudgetSettings CodexBudget { get; set; } = new();
 
     public AutonomyConfiguration GetAutonomyConfiguration()
     {
@@ -32,6 +35,20 @@ internal sealed class AppSettings
         AutonomyMaximumWait = configuration.MaximumWait;
         EnabledAutonomousActions = configuration.EnabledActions.ToArray();
     }
+}
+
+internal sealed class ProviderBudgetSettings
+{
+    public double? DailyUSD { get; set; }
+    public double? MonthlyUSD { get; set; }
+
+    public void Update(double? dailyUSD, double? monthlyUSD)
+    {
+        DailyUSD = Valid(dailyUSD);
+        MonthlyUSD = Valid(monthlyUSD);
+    }
+
+    private static double? Valid(double? value) => value is > 0 and <= 1_000_000 ? value : null;
 }
 
 internal static class SettingsStore

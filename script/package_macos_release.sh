@@ -19,6 +19,7 @@ cleanup() {
 trap cleanup EXIT
 
 cd "$ROOT_DIR"
+npm run dashboard:build
 for ARCH in arm64 x86_64; do
   swift build \
     -c release \
@@ -35,6 +36,8 @@ lipo -create \
   -output "$APP/Contents/MacOS/$APP_NAME"
 cp "$INFO_PLIST" "$APP/Contents/Info.plist"
 cp "$ROOT_DIR/Assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+cp -R "$ROOT_DIR/Assets/DefaultPets" "$APP/Contents/Resources/DefaultPets"
+cp -R "$ROOT_DIR/DashboardWeb/dist" "$APP/Contents/Resources/DashboardWeb"
 chmod +x "$APP/Contents/MacOS/$APP_NAME"
 
 codesign \

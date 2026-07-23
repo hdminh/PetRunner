@@ -30,8 +30,8 @@ public enum AgentProvider: String, CaseIterable, Codable, Sendable {
     }
 }
 
-/// Optional metadata fields that the Phase 2 bubble can render. Provider and
-/// status are always shown and therefore intentionally are not configurable.
+/// Metadata fields rendered in the Phase 2 bubble. Provider and status are
+/// always shown; the remaining fields are always available when present.
 public enum MonitorBubbleField: String, CaseIterable, Codable, Sendable {
     case model
     case job

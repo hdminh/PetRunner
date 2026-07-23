@@ -7,6 +7,9 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
     var onPositionChanged: ((CGPoint) -> Void)?
     var onSizeChanged: ((CGFloat) -> Void)?
     var onFrameChanged: ((CGRect) -> Void)?
+    var contextMenuProvider: (() -> NSMenu?)? {
+        didSet { spriteView.contextMenuProvider = contextMenuProvider }
+    }
 
     private let logger = Logger(subsystem: "vn.hodinhminh.petrunner", category: "overlay")
     private let panel: NSPanel
@@ -125,10 +128,27 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
     }
 
     func resetPositionToDefault() {
-        let origin = clampedOrigin(defaultOrigin(for: panel.frame.size))
+        // Stop in-flight throw/walk so the next tick cannot yank the pet off the
+        // newly chosen origin (which looked like a "disappear" on multi-monitor setups).
+        motion = nil
+        cancelAutonomy()
+        interactionActive = false
+        dragStartPointer = nil
+        dragStartOrigin = nil
+        previousDragPointer = nil
+
+        let size = panel.frame.size
+        let origin = clampedOrigin(defaultOrigin(for: size), preferring: NSScreen.main)
         panel.setFrameOrigin(origin)
+        if atlas != nil {
+            panel.orderFrontRegardless()
+        }
+        if monitorAnimation == nil {
+            playback.start(.idle)
+        }
         onPositionChanged?(origin)
         onFrameChanged?(panel.frame)
+        renderCurrentFrame()
     }
 
     func clampToAvailableScreens() {
@@ -397,13 +417,16 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
     }
 
     private func defaultOrigin(for size: CGSize) -> CGPoint {
-        guard let frame = NSScreen.main?.visibleFrame else { return CGPoint(x: 40, y: 40) }
-        return CGPoint(x: frame.maxX - size.width - 32, y: frame.minY + 32)
+        // Primary display (menu-bar screen). Use visibleFrame so menu bar / dock are respected.
+        let bounds = NSScreen.main?.visibleFrame
+            ?? NSScreen.screens.first?.visibleFrame
+            ?? CGRect(x: 0, y: 0, width: 800, height: 600)
+        return PhysicsEngine.centeredOrigin(size: size, bounds: bounds)
     }
 
-    private func clampedOrigin(_ origin: CGPoint) -> CGPoint {
+    private func clampedOrigin(_ origin: CGPoint, preferring preferredScreen: NSScreen? = nil) -> CGPoint {
         let proposed = CGRect(origin: origin, size: panel.frame.size)
-        let screen = bestScreen(for: proposed) ?? NSScreen.main
+        let screen = preferredScreen ?? bestScreen(for: proposed) ?? NSScreen.main
         guard let bounds = screen?.visibleFrame else { return origin }
         return PhysicsEngine.clampedOrigin(origin, size: panel.frame.size, bounds: bounds)
     }

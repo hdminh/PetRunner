@@ -11,6 +11,7 @@ struct SessionBubbleLayoutTests {
         #expect(layout.contentBounds.contains(layout.previousControlFrame))
         #expect(layout.contentBounds.contains(layout.nextControlFrame))
         #expect(layout.contentBounds.contains(layout.collapseControlFrame))
+        #expect(layout.contentBounds.contains(layout.resetControlFrame))
         for index in layout.indicatorIndices.indices {
             #expect(layout.contentBounds.contains(layout.indicatorFrame(at: index)))
         }
@@ -40,6 +41,14 @@ struct SessionBubbleLayoutTests {
 
         #expect(layout.collapseControlFrame.minX == layout.bubbleFrame.minX + 6)
         #expect(layout.collapseControlFrame.midY == layout.headerFrame.midY)
+    }
+
+    @Test func resetControlSitsBesideMinimizeInTheHeader() {
+        let layout = SessionBubbleLayout(sessionCount: 1, isCollapsed: false)
+
+        #expect(layout.resetControlFrame.minX == layout.collapseControlFrame.maxX + 2)
+        #expect(layout.resetControlFrame.midY == layout.headerFrame.midY)
+        #expect(layout.resetControlFrame.size == CGSize(width: 16, height: 16))
     }
 
     @Test func expandedSessionRailStartsJustBelowTheHeader() {

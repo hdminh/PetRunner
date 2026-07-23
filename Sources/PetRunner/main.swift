@@ -15,10 +15,17 @@ if arguments.contains("--agent-monitor-cleanup") {
     }
 }
 
-let application = NSApplication.shared
-let applicationDelegate = AppDelegate()
-application.delegate = applicationDelegate
-application.setActivationPolicy(.accessory)
-withExtendedLifetime(applicationDelegate) {
-    application.run()
+let launchesInBackground = arguments.contains("--background")
+switch SingleInstanceCoordinator.acquire() {
+case .secondary:
+    if !launchesInBackground { SingleInstanceCoordinator.requestDashboard() }
+    exit(0)
+case let .primary(singleInstance):
+    let application = NSApplication.shared
+    let applicationDelegate = AppDelegate(launchesInBackground: launchesInBackground)
+    application.delegate = applicationDelegate
+    application.setActivationPolicy(.accessory)
+    withExtendedLifetime((applicationDelegate, singleInstance)) {
+        application.run()
+    }
 }

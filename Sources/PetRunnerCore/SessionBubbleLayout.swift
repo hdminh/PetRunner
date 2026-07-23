@@ -79,6 +79,8 @@ public struct SessionBubbleLayout: Sendable {
     public var previousControlFrame: CGRect { CGRect(x: nextControlFrame.minX - 18, y: headerFrame.midY - 8, width: 16, height: 16) }
     public var nextControlFrame: CGRect { CGRect(x: sessionPositionFrame.minX - 20, y: headerFrame.midY - 8, width: 16, height: 16) }
     public var collapseControlFrame: CGRect { CGRect(x: bubbleFrame.minX + 6, y: bubbleFrame.maxY - 20, width: 16, height: 16) }
+    /// Pixel reset / clear control immediately after minimize in the expanded header.
+    public var resetControlFrame: CGRect { CGRect(x: collapseControlFrame.maxX + 2, y: bubbleFrame.maxY - 20, width: 16, height: 16) }
     public var expandControlFrame: CGRect { CGRect(x: 2, y: contentSize.height - 18, width: 20, height: 18) }
 
     public func speechTailFrames() -> [CGRect] {

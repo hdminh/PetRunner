@@ -17,6 +17,7 @@ protocol SpriteViewDelegate: AnyObject {
 @MainActor
 final class SpriteView: NSView {
     weak var delegate: SpriteViewDelegate?
+    var contextMenuProvider: (() -> NSMenu?)?
 
     private var image: NSImage?
     private var trackingAreaReference: NSTrackingArea?
@@ -97,6 +98,10 @@ final class SpriteView: NSView {
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        contextMenuProvider?()
+    }
 
     override func mouseDown(with event: NSEvent) {
         let pointer = NSEvent.mouseLocation

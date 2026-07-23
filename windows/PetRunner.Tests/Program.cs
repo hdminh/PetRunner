@@ -10,7 +10,11 @@ internal static class Program
             (nameof(AutonomyTests), AutonomyTests.Run),
             (nameof(PhysicsTests), PhysicsTests.Run),
             (nameof(PetLoaderTests), PetLoaderTests.Run),
+            (nameof(PetImportTests), PetImportTests.Run),
+            (nameof(PetRemovalTests), PetRemovalTests.Run),
             (nameof(SpriteAtlasTests), SpriteAtlasTests.Run),
+            (nameof(UsageTests), UsageTests.Run),
+            (nameof(DashboardRouteTests), DashboardRouteTests.Run),
         };
 
         try

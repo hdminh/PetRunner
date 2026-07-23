@@ -81,11 +81,18 @@ internal sealed class OverlayWindow : Window, IDisposable
     public void ResetPositionToDefault()
     {
         if (!IsVisible) return;
-        var area = ScreenBounds.WorkingArea(this);
-        Left = area.X + area.Width - Width - 32;
-        Top = area.Y + area.Height - Height - 32;
+        motion = null;
+        CancelAutonomy();
+        interacting = false;
+        resizing = false;
+        var area = ScreenBounds.PrimaryWorkingArea(this);
+        var centered = PhysicsEngine.CenteredOrigin(new SizeD(Width, Height), area);
+        Left = centered.X;
+        Top = centered.Y;
         ClampToScreen();
+        if (playback.State != AnimationState.Idle) playback.Start(AnimationState.Idle);
         PositionChanged?.Invoke(Left, Top);
+        Render();
     }
 
     public void ShowPet(PetDescriptor descriptor, double width, (double Left, double Top)? savedPosition)

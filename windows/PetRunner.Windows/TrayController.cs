@@ -12,7 +12,7 @@ internal sealed class TrayController : IDisposable
     private readonly Action reload;
     private readonly Action toggleAutonomy;
     private readonly Action resetPosition;
-    private readonly Action openSettings;
+    private readonly Action openDashboard;
     private readonly Action quit;
     private readonly Icon applicationIcon;
     private readonly NotifyIcon icon;
@@ -24,7 +24,7 @@ internal sealed class TrayController : IDisposable
         Action reload,
         Action toggleAutonomy,
         Action resetPosition,
-        Action openSettings,
+        Action openDashboard,
         Action quit)
     {
         this.changePet = changePet;
@@ -32,7 +32,7 @@ internal sealed class TrayController : IDisposable
         this.reload = reload;
         this.toggleAutonomy = toggleAutonomy;
         this.resetPosition = resetPosition;
-        this.openSettings = openSettings;
+        this.openDashboard = openDashboard;
         this.quit = quit;
         applicationIcon = LoadApplicationIcon();
         icon = new NotifyIcon
@@ -86,9 +86,9 @@ internal sealed class TrayController : IDisposable
         var resetItem = new ToolStripMenuItem("Reset Position");
         resetItem.Click += (_, _) => resetPosition();
         menu.Items.Add(resetItem);
-        var settingsItem = new ToolStripMenuItem("Settings…");
-        settingsItem.Click += (_, _) => openSettings();
-        menu.Items.Add(settingsItem);
+        var dashboardItem = new ToolStripMenuItem("Open Dashboard…");
+        dashboardItem.Click += (_, _) => openDashboard();
+        menu.Items.Add(dashboardItem);
 
         if (failures.Count > 0)
         {

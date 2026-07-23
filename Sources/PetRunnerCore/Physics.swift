@@ -72,4 +72,13 @@ public struct PhysicsEngine {
             y: min(max(origin.y, bounds.minY), max(bounds.minY, bounds.maxY - size.height))
         )
     }
+
+    /// Centers `size` within `bounds`, then clamps so the full frame stays on-screen.
+    public static func centeredOrigin(size: CGSize, bounds: CGRect) -> CGPoint {
+        clampedOrigin(
+            CGPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2),
+            size: size,
+            bounds: bounds
+        )
+    }
 }

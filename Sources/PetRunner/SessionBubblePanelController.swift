@@ -5,6 +5,7 @@ import PetRunnerCore
 final class SessionBubblePanelController {
     private let background = StackedBubbleBackgroundView()
     private let collapseButton = NSButton(title: "", target: nil, action: nil)
+    private let resetButton = NSButton(title: "", target: nil, action: nil)
     private let previousButton = NSButton(title: "", target: nil, action: nil)
     private let nextButton = NSButton(title: "", target: nil, action: nil)
     private let expandButton = NSButton(title: "", target: nil, action: nil)
@@ -18,6 +19,7 @@ final class SessionBubblePanelController {
     var onSelectNext: (() -> Void)?
     var onCollapse: (() -> Void)?
     var onExpand: (() -> Void)?
+    var onReset: (() -> Void)?
 
     init() {
         panel = NSPanel(
@@ -59,6 +61,11 @@ final class SessionBubblePanelController {
         collapseButton.toolTip = "Minimize session monitor"
         collapseButton.setAccessibilityLabel("Minimize session monitor")
         contentView.addSubview(collapseButton)
+
+        configure(resetButton, action: #selector(reset))
+        resetButton.toolTip = "Reset session monitor"
+        resetButton.setAccessibilityLabel("Reset session monitor")
+        contentView.addSubview(resetButton)
 
         configure(previousButton, action: #selector(selectPrevious))
         previousButton.toolTip = "Show newer session"
@@ -137,6 +144,8 @@ final class SessionBubblePanelController {
 
         collapseButton.frame = layout.collapseControlFrame
         collapseButton.isHidden = isCollapsed
+        resetButton.frame = layout.resetControlFrame
+        resetButton.isHidden = isCollapsed
         previousButton.frame = layout.previousControlFrame
         previousButton.isHidden = isCollapsed
         previousButton.isEnabled = selectedIndex > 0
@@ -158,6 +167,7 @@ final class SessionBubblePanelController {
     @objc private func selectNext() { onSelectNext?() }
     @objc private func collapse() { onCollapse?() }
     @objc private func expand() { onExpand?() }
+    @objc private func reset() { onReset?() }
 
     private func configure(_ button: NSButton, action: Selector) {
         button.title = ""

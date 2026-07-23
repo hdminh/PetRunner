@@ -15,6 +15,7 @@ APP_BINARY="$APP_MACOS/$APP_NAME"
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 
 cd "$ROOT_DIR"
+npm run dashboard:build
 swift build
 BUILD_BINARY="$(swift build --show-bin-path)/$APP_NAME"
 
@@ -23,6 +24,8 @@ mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
 cp "$ROOT_DIR/Support/Info.plist" "$APP_CONTENTS/Info.plist"
 cp "$ROOT_DIR/Assets/AppIcon.icns" "$APP_RESOURCES/AppIcon.icns"
+cp -R "$ROOT_DIR/Assets/DefaultPets" "$APP_RESOURCES/DefaultPets"
+cp -R "$ROOT_DIR/DashboardWeb/dist" "$APP_RESOURCES/DashboardWeb"
 chmod +x "$APP_BINARY"
 codesign \
   --force \
