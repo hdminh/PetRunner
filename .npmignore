@@ -1,12 +1,12 @@
-# Keep npm packs source-only. Never ship local build outputs.
+# Keep npm packs source-only. Never ship local build outputs or Finder duplicates.
 **/obj/
 windows/**/bin/
 windows/**/obj/
 **/node_modules/
 **/.DS_Store
 *.tgz
-* 2.*
-* 2/
+**/* 2.*
+**/* 2
 DashboardWeb/node_modules/
 dist/
 .build/
