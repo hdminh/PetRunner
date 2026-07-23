@@ -12,12 +12,15 @@ struct PetRunnerPreferences {
         static let monitorEnabled = "monitorEnabled"
         static let monitorProviders = "monitorProviders"
         static let monitorProvider = "monitorProvider"
-        static let monitorBubbleFields = "monitorBubbleFields"
         static let monitorBubbleCollapsed = "monitorBubbleCollapsed"
         static let autonomyEnabled = "autonomyEnabled"
         static let autonomyMinimumWait = "autonomyMinimumWait"
         static let autonomyMaximumWait = "autonomyMaximumWait"
         static let autonomyEnabledActions = "autonomyEnabledActions"
+        static let showsStatusItem = "showsStatusItem"
+        static let petsDirectory = "petsDirectory"
+        static let budgets = "budgets"
+        static let providerToggles = "providerToggles"
     }
 
     private let defaults: UserDefaults
@@ -68,16 +71,6 @@ struct PetRunnerPreferences {
         nonmutating set { defaults.set(newValue?.rawValue, forKey: Key.monitorProvider) }
     }
 
-    var monitorBubbleFields: [MonitorBubbleField] {
-        get {
-            guard let values = defaults.stringArray(forKey: Key.monitorBubbleFields) else {
-                return MonitorBubbleField.allCases
-            }
-            return values.compactMap(MonitorBubbleField.init(rawValue:))
-        }
-        nonmutating set { defaults.set(newValue.map(\.rawValue), forKey: Key.monitorBubbleFields) }
-    }
-
     /// Migrates the former multi-provider preference without selecting a
     /// provider on the user's behalf when the old value is ambiguous.
     func migrateLegacyMonitorProviderIfNeeded() {
@@ -102,6 +95,62 @@ struct PetRunnerPreferences {
     var autonomyEnabled: Bool {
         get { defaults.object(forKey: Key.autonomyEnabled) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.autonomyEnabled) }
+    }
+
+    var showsStatusItem: Bool {
+        get { defaults.object(forKey: Key.showsStatusItem) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.showsStatusItem) }
+    }
+
+    /// Optional custom pets library path. Ignored when `--pets-dir` is passed on launch.
+    var petsDirectory: URL? {
+        get {
+            guard let path = defaults.string(forKey: Key.petsDirectory)?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty
+            else { return nil }
+            return URL(
+                fileURLWithPath: (path as NSString).expandingTildeInPath,
+                isDirectory: true
+            )
+        }
+        nonmutating set {
+            if let newValue {
+                defaults.set(newValue.path, forKey: Key.petsDirectory)
+            } else {
+                defaults.removeObject(forKey: Key.petsDirectory)
+            }
+        }
+    }
+
+    var budgetConfigurations: [UsageProvider: ProviderBudgetConfiguration] {
+        get {
+            guard let data = defaults.data(forKey: Key.budgets), let values = try? JSONDecoder().decode([String: ProviderBudgetConfiguration].self, from: data) else { return [:] }
+            return Dictionary(uniqueKeysWithValues: values.compactMap { entry in
+                UsageProvider(rawValue: entry.key).map { ($0, entry.value) }
+            })
+        }
+        nonmutating set {
+            let values = Dictionary(uniqueKeysWithValues: newValue.map { ($0.key.rawValue, $0.value) })
+            defaults.set(try? JSONEncoder().encode(values), forKey: Key.budgets)
+        }
+    }
+
+    func isProviderEnabled(_ provider: UsageProvider) -> Bool {
+        providerToggles()[provider.rawValue] ?? true
+    }
+
+    func setProviderEnabled(_ provider: UsageProvider, enabled: Bool) {
+        var toggles = providerToggles()
+        toggles[provider.rawValue] = enabled
+        defaults.set(toggles, forKey: Key.providerToggles)
+    }
+
+    var enabledProviders: Set<UsageProvider> {
+        Set(UsageProvider.allCases.filter(isProviderEnabled))
+    }
+
+    private func providerToggles() -> [String: Bool] {
+        (defaults.dictionary(forKey: Key.providerToggles) as? [String: Bool]) ?? [:]
     }
 
     var autonomyConfiguration: AutonomyConfiguration {

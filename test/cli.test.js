@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
-import { parseArguments, resolveInstallPaths, uninstall } from "../lib/cli.js";
+import { copyBuildPayload, parseArguments, resolveInstallPaths, uninstall } from "../lib/cli.js";
 
 test("start is the default command", () => {
   assert.deepEqual(parseArguments([]), {
@@ -17,6 +20,12 @@ test("bin entrypoint reports the package version", () => {
   const output = execFileSync(process.execPath, ["bin/pet-runner.js", "--version"], { encoding: "utf8" });
   const packageVersion = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
   assert.equal(output.trim(), packageVersion);
+});
+
+test("npm package allow-list includes the dashboard", () => {
+  const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  assert.equal(packageJson.files.includes("DashboardWeb/"), true);
+  assert.equal(packageJson.files.includes("Assets/"), true);
 });
 
 test("parses a custom pet directory", () => {
@@ -44,6 +53,28 @@ test("uses LOCALAPPDATA on Windows", () => {
 
 test("rejects unsupported platforms", () => {
   assert.throws(() => resolveInstallPaths({ platform: "linux" }), /unsupported platform/);
+});
+
+test("build payload includes local dashboard assets", async () => {
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "pet-runner-package-"));
+  const destination = path.join(fixtureRoot, "destination");
+
+  try {
+    for (const directory of ["Assets", "DashboardWeb", "Sources", "Support", "windows"]) {
+      await mkdir(path.join(fixtureRoot, directory), { recursive: true });
+      await writeFile(path.join(fixtureRoot, directory, ".fixture"), directory);
+    }
+    await writeFile(path.join(fixtureRoot, "DashboardWeb", "index.html"), "dashboard");
+    await writeFile(path.join(fixtureRoot, "Support", "Package.runtime.swift"), "manifest");
+
+    await copyBuildPayload(destination, fixtureRoot);
+
+    assert.equal(readFileSync(path.join(destination, "DashboardWeb", "index.html"), "utf8"), "dashboard");
+    assert.equal(readFileSync(path.join(destination, "Package.swift"), "utf8"), "manifest");
+    assert.equal(existsSync(path.join(destination, "DashboardWeb", ".fixture")), true);
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
 });
 
 test("uninstall removes monitor hooks before deleting the macOS app", async () => {
