@@ -20,5 +20,9 @@ internal static class PhysicsTests
         PhysicsEngine.Step(ref slow, new SizeD(10, 10), new RectD(0, 0, 100, 100), 0.1);
         Check.Equal(0d, slow.VelocityX);
         Check.Equal(0d, slow.VelocityY);
+
+        var centered = PhysicsEngine.CenteredOrigin(new SizeD(112, 121), new RectD(100, 50, 800, 600));
+        Check.Equal(100 + (800 - 112) / 2d, centered.X);
+        Check.Equal(50 + (600 - 121) / 2d, centered.Y);
     }
 }

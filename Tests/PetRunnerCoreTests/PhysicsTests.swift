@@ -13,6 +13,20 @@ struct PhysicsTests {
         #expect(result == CGPoint(x: 100, y: 529))
     }
 
+    @Test func centeredOriginUsesVisibleFrameMidpoint() {
+        let bounds = CGRect(x: 100, y: 50, width: 800, height: 600)
+        let size = CGSize(width: 112, height: 121)
+        let result = PhysicsEngine.centeredOrigin(size: size, bounds: bounds)
+        #expect(abs(result.x - (bounds.midX - size.width / 2)) < 0.001)
+        #expect(abs(result.y - (bounds.midY - size.height / 2)) < 0.001)
+    }
+
+    @Test func centeredOriginClampsWhenPetLargerThanBounds() {
+        let bounds = CGRect(x: 10, y: 20, width: 50, height: 40)
+        let result = PhysicsEngine.centeredOrigin(size: CGSize(width: 112, height: 121), bounds: bounds)
+        #expect(result == CGPoint(x: 10, y: 20))
+    }
+
     @Test func stepBouncesAtRightEdgeWithConfiguredRestitution() {
         let engine = PhysicsEngine(velocityRetentionPerSecond: 1, restitution: 0.72, stopSpeed: 0)
         var motion = MotionState(origin: CGPoint(x: 385, y: 100), velocity: CGVector(dx: 200, dy: 0))

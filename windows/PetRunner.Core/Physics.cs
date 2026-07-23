@@ -74,4 +74,10 @@ public static class PhysicsEngine
             Math.Clamp(x, bounds.X, Math.Max(bounds.X, bounds.X + bounds.Width - size.Width)),
             Math.Clamp(y, bounds.Y, Math.Max(bounds.Y, bounds.Y + bounds.Height - size.Height))
         );
+
+    public static (double X, double Y) CenteredOrigin(SizeD size, RectD bounds)
+    {
+        var origin = (bounds.X + (bounds.Width - size.Width) / 2, bounds.Y + (bounds.Height - size.Height) / 2);
+        return Clamp(origin.Item1, origin.Item2, size, bounds);
+    }
 }
