@@ -15,32 +15,49 @@ PetRunner reads the existing Codex pet directory by default:
 - Windows: `%USERPROFILE%\.codex\pets`
 - custom `CODEX_HOME`: `$CODEX_HOME/pets`
 
-Install pets with Petdex before or after starting PetRunner. PetRunner does not
-depend on Petdex or any other pet installer; it only reads compatible files from
-the pet directory.
+Install pets with Petdex before or after starting PetRunner, download ZIP packages
+from [pet-runner.com](https://pet-runner.com) and use **Import** on the Pets page,
+or run `npx codex-pets add <id>`. On first launch PetRunner also seeds the bundled
+**maomao** default pet into the library when that package is missing, and prefers
+it when no pet is selected. PetRunner does not depend on Petdex or any other pet
+installer for day-to-day use; it only reads compatible files from the pet
+directory (and may copy the bundled default once).
 
 ## Quick start
 
 Install Node.js 18 or later, then run:
 
 ```bash
-npx pet-runner start
+npx @hdminh/pet-runner start
 ```
 
-The first run builds and installs the app locally. Subsequent runs open the
-existing build. Use **Reload Pets** from the tray or menu after adding a pet.
+The first run builds and installs the app locally. Subsequent runs start the
+pet runner in the background and do not open a window. Open `PetRunner.app`
+from Applications, Finder, Spotlight, the menu bar icon, or the pet's
+right-click menu whenever you want the Dashboard. Closing the Dashboard hides
+it and removes the temporary Dock icon; the pet, usage scan, and alerts keep
+running until you choose **Quit PetRunner**.
+
+The Dashboard has Overview, Sessions, Pets, and Settings. Overview indexes
+local Codex/Claude JSONL usage without retaining prompts, transcripts,
+commands, or tool payloads. Cursor local conversation figures are explicitly
+estimated and never trigger a budget alert. Configure daily/monthly provider
+budgets in Settings; alerts occur once at 80% and 100% for each period.
+
+From **Pets**, import a folder or ZIP package. Imports are staged and validated
+before touching the library; replacing a duplicate preserves a local backup.
 
 To update or remove the local build:
 
 ```bash
-npx pet-runner update
-npx pet-runner uninstall
+npx @hdminh/pet-runner update
+npx @hdminh/pet-runner uninstall
 ```
 
 To use a different pet library:
 
 ```bash
-npx pet-runner start --pets-dir /absolute/path/to/pets
+npx @hdminh/pet-runner start --pets-dir /absolute/path/to/pets
 ```
 
 ## Optional agent monitor (macOS)
@@ -77,7 +94,7 @@ Choose **Disable Agent Monitor** to remove only PetRunner-owned hook entries
 and return to pet-only mode. Existing configuration is parsed before changes;
 malformed or unsupported config is left untouched and the action fails rather
 than replacing it. A `.petrunner-backup` copy is kept beside any changed
-provider config. `npx pet-runner uninstall` runs the same cleanup before it
+provider config. `npx @hdminh/pet-runner uninstall` runs the same cleanup before it
 deletes the installed app. If you remove a manually installed app in Finder,
 disable monitoring first so no provider hook points to a missing executable.
 
