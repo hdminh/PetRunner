@@ -1,6 +1,6 @@
 {
   "name": "@hdminh/pet-runner",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Build and run PetRunner locally on macOS and Windows.",
   "license": "MIT",
   "type": "module",
