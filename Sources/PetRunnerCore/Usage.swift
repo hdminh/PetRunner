@@ -6,31 +6,6 @@ public enum UsageProvider: String, CaseIterable, Codable, Sendable {
     case claude, codex, cursor
 
     public var displayName: String { rawValue.capitalized }
-
-    public struct OfficialLinks: Equatable, Sendable {
-        public let usageURL: URL
-        public let statusURL: URL
-    }
-
-    public var officialLinks: OfficialLinks {
-        switch self {
-        case .claude:
-            return OfficialLinks(
-                usageURL: URL(string: "https://claude.ai/settings/usage")!,
-                statusURL: URL(string: "https://status.anthropic.com/")!
-            )
-        case .codex:
-            return OfficialLinks(
-                usageURL: URL(string: "https://chatgpt.com/#settings")!,
-                statusURL: URL(string: "https://status.openai.com/")!
-            )
-        case .cursor:
-            return OfficialLinks(
-                usageURL: URL(string: "https://cursor.com/dashboard?tab=usage")!,
-                statusURL: URL(string: "https://status.cursor.com/")!
-            )
-        }
-    }
 }
 
 public enum UsageCostProvenance: String, Codable, Sendable {
