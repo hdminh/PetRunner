@@ -219,9 +219,12 @@ public enum CursorLocalSessionIndex {
         workspacePaths: [String: String],
         into byConversation: inout [String: Mutable]
     ) {
-        let encodedToPath: [String: String] = Dictionary(uniqueKeysWithValues: workspacePaths.values.map {
-            (encodeWorkspaceFolderName($0), $0)
-        })
+        // Distinct workspace paths can encode to the same folder name
+        // (e.g. "/a/b" and "/a-b"), so collisions must not trap.
+        let encodedToPath: [String: String] = Dictionary(
+            workspacePaths.values.map { (encodeWorkspaceFolderName($0), $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         let fileManager = FileManager.default
         guard let projectFolders = try? fileManager.contentsOfDirectory(
             at: projectsDirectory,

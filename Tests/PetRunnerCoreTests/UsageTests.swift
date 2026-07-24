@@ -288,6 +288,36 @@ struct UsageTests {
         #expect(attribution["ddd-from-transcript"]?.projectPath == "/Users/me/Documents/petrunner-web")
     }
 
+    @Test func cursorLocalSessionIndexToleratesCollidingWorkspaceFolderNames() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspaceStorage = root.appendingPathComponent("workspaceStorage", isDirectory: true)
+        for (id, uri) in [
+            ("ws-flat", "file:///Users/me/Documents/road-map"),
+            ("ws-nested", "file:///Users/me/Documents/road/map"),
+        ] {
+            let folder = workspaceStorage.appendingPathComponent(id, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data(#"{"folder":"\#(uri)"}"#.utf8)
+                .write(to: folder.appendingPathComponent("workspace.json"))
+        }
+
+        let projectsDir = root.appendingPathComponent("projects", isDirectory: true)
+        let transcripts = projectsDir
+            .appendingPathComponent("Users-me-Documents-road-map/agent-transcripts", isDirectory: true)
+        try FileManager.default.createDirectory(at: transcripts, withIntermediateDirectories: true)
+        try Data().write(to: transcripts.appendingPathComponent("eee-colliding"))
+
+        let attribution = CursorLocalSessionIndex.load(
+            paths: .init(
+                stateDatabase: root.appendingPathComponent("missing.vscdb"),
+                workspaceStorageDirectory: workspaceStorage,
+                cursorProjectsDirectory: projectsDir
+            )
+        )
+        #expect(attribution["eee-colliding"]?.projectPath != nil)
+    }
+
     @Test func usageStoreReplaceSessionsOverwritesCursorPlaceholders() throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
