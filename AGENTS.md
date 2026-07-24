@@ -82,3 +82,28 @@ ignored. The top-level `bin/` directory is npm CLI source and is committed.
 - Keep changes scoped; this repository may contain a dirty working tree from
   ongoing work. Do not discard or overwrite unrelated modifications.
 - Prefer `apply_patch` for edits. Do not commit generated build artifacts.
+
+## Cursor Cloud specific instructions
+
+The Cloud VM runs Linux, but the two native apps target macOS (Swift/AppKit)
+and Windows (.NET 10/WPF). Neither `swift` nor `dotnet` is installed and neither
+app can build or run on Linux. The Linux-developable/runnable surface is the
+`DashboardWeb/` React+Vite frontend and the JavaScript test suites.
+
+- Install deps with `npm install --force`. Plain `npm install` fails with
+  `EBADPLATFORM` because `package.json` declares `"os": ["darwin","win32"]`;
+  `--force` downgrades that check to a warning (dev-only, on Linux).
+- Runnable on Linux (see `package.json` scripts): `npm test` (CLI unit tests),
+  `npm run dashboard:typecheck`, `npm run dashboard:test` (Vitest),
+  `npm run dashboard:build`, and `npm run dashboard:dev` (Vite dev server at
+  `http://localhost:5173/`).
+- The dashboard SPA expects the native app's embedded loopback API
+  (`api/v2`, falling back to `api/v1`). On Linux that server does not exist, so
+  the dev server shows an "Offline"/"Request failed (404)" banner and empty
+  data. This is expected — the UI, routing, and client-side controls still
+  work; it is not a bug to fix.
+- The npm CLI (`pet-runner start/install/update`) errors on Linux because
+  `resolveInstallPaths` only supports darwin/win32, so it cannot build or launch
+  the native app here. Test the CLI via `npm test`, not by running it.
+- Swift/.NET suites (`swift test`, the `dotnet` test project) and the
+  `build_and_run`/packaging scripts require macOS or Windows; run them there.
