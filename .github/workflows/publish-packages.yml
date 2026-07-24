@@ -46,8 +46,8 @@ jobs:
         with:
           node-version: 22.14.0
           registry-url: https://registry.npmjs.org
-      # Trusted publishing requires npm >= 11.5.1; Node 22.14.0 bundles npm 10.
-      - run: npm install -g npm@latest
+      # Trusted publishing requires npm >= 11.5.1; Node 22.14.0 bundles npm 10, and npm 12 drops Node 22.14.
+      - run: npm install -g npm@^11
       - run: npm publish --access public
 
   publish-github:
