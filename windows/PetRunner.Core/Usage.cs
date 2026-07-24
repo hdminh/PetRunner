@@ -295,7 +295,8 @@ public sealed class LocalUsageIndex
             }
             var record = new UsageRecord(sourceId, UsageProvider.Claude, session, Date(root, fallbackDate), model, tokens, UsagePricing.Cost(model, tokens));
             if (dedupeKey is null) unkeyed.Add(record);
-            else keyed[dedupeKey] = record;
+            else if (!keyed.TryGetValue(dedupeKey, out var existing) || record.OccurredAt < existing.OccurredAt)
+                keyed[dedupeKey] = record; // ccgauge earliest-wins
         }
         return keyed.Values.Concat(unkeyed).OrderBy(record => record.OccurredAt).ToArray();
     }
