@@ -8,6 +8,7 @@ internal static class UsageTests
     {
         CodexCumulativeCountersBecomeDeltas();
         ClaudeUsageAndSessionsAggregate();
+        ClaudeStreamingChunksDedupLastWins();
         FiltersByRangeProviderAndModel();
         RecursivelyFindsNestedUsage();
     }
@@ -44,6 +45,23 @@ internal static class UsageTests
         Check.Equal(5L, records[0].Tokens.CachedInput);
         Check.Equal(45L, session.Tokens.Total);
         Check.Equal(120d, session.DurationSeconds);
+    }
+
+    private static void ClaudeStreamingChunksDedupLastWins()
+    {
+        using var fixture = new UsageFixture();
+        fixture.WriteClaude("session-stream",
+            """{"type":"assistant","uuid":"u1","requestId":"req-1","sessionId":"session-stream","timestamp":"2026-07-22T10:00:00Z","message":{"id":"msg_abc","model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"cache_read_input_tokens":200,"output_tokens":5}}}""",
+            """{"type":"assistant","uuid":"u2","requestId":"req-1","sessionId":"session-stream","timestamp":"2026-07-22T10:00:01Z","message":{"id":"msg_abc","model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"cache_read_input_tokens":200,"output_tokens":50}}}""",
+            """{"type":"assistant","uuid":"u3","requestId":"req-1","sessionId":"session-stream","timestamp":"2026-07-22T10:00:02Z","message":{"id":"msg_abc","model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"cache_read_input_tokens":200,"output_tokens":200}}}"""
+        );
+
+        var records = fixture.Index.Records(forceRefresh: true).Where(record => record.Provider == UsageProvider.Claude).ToArray();
+        Check.Equal(1, records.Length);
+        Check.Equal(1000L, records[0].Tokens.Input);
+        Check.Equal(200L, records[0].Tokens.CachedInput);
+        Check.Equal(200L, records[0].Tokens.Output);
+        Check.True(records[0].Id.Contains("msg_abc:req-1", StringComparison.Ordinal), "Stable message/request source key");
     }
 
     private static void FiltersByRangeProviderAndModel()

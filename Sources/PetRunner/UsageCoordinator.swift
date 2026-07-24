@@ -50,13 +50,31 @@ actor UsageCoordinator {
         let claudeFiles = claudeEnabled ? LocalUsageSource.claudeSourceFiles(roots: claudeRoots) : []
         let currentReceipts = LocalUsageSource.sourceReceipts(for: codexFiles + claudeFiles)
         let changedSources = Set(try store.changedSources(currentReceipts).map(\.sourceKey))
-        let codexScan = LocalUsageSource.codexScan(
-            files: codexFiles.filter { changedSources.contains(LocalUsageSource.sourceIdentity(for: $0)) },
-            now: now)
-        let claudeScan = LocalUsageSource.claudeScan(
-            files: claudeFiles.filter { changedSources.contains(LocalUsageSource.sourceIdentity(for: $0)) },
-            now: now)
-        if !codexScan.records.isEmpty || !claudeScan.records.isEmpty || !codexScan.sessions.isEmpty || !claudeScan.sessions.isEmpty || !codexScan.sourceReceipts.isEmpty || !claudeScan.sourceReceipts.isEmpty {
+        let changedCodexFiles = codexFiles.filter { changedSources.contains(LocalUsageSource.sourceIdentity(for: $0)) }
+        let changedClaudeFiles = claudeFiles.filter { changedSources.contains(LocalUsageSource.sourceIdentity(for: $0)) }
+        // Parser-revision bumps invalidate every receipt. Rescanning with new
+        // Claude source keys must replace the provider ledger; otherwise stale
+        // uuid-keyed streaming chunks remain and costs stay inflated.
+        let claudeFullRescan = claudeEnabled && !claudeFiles.isEmpty && changedClaudeFiles.count == claudeFiles.count
+        let codexFullRescan = codexEnabled && !codexFiles.isEmpty && changedCodexFiles.count == codexFiles.count
+        let codexScan = LocalUsageSource.codexScan(files: changedCodexFiles, now: now)
+        let claudeScan = LocalUsageSource.claudeScan(files: changedClaudeFiles, now: now)
+        if claudeFullRescan || codexFullRescan {
+            if claudeFullRescan {
+                try store.replaceRecords(provider: .claude, with: claudeScan.records)
+                try store.replaceSessions(provider: .claude, with: claudeScan.sessions)
+                try store.save(sourceReceipts: claudeScan.sourceReceipts)
+            } else if !claudeScan.records.isEmpty || !claudeScan.sessions.isEmpty || !claudeScan.sourceReceipts.isEmpty {
+                try store.upsert(claudeScan)
+            }
+            if codexFullRescan {
+                try store.replaceRecords(provider: .codex, with: codexScan.records)
+                try store.replaceSessions(provider: .codex, with: codexScan.sessions)
+                try store.save(sourceReceipts: codexScan.sourceReceipts)
+            } else if !codexScan.records.isEmpty || !codexScan.sessions.isEmpty || !codexScan.sourceReceipts.isEmpty {
+                try store.upsert(codexScan)
+            }
+        } else if !codexScan.records.isEmpty || !claudeScan.records.isEmpty || !codexScan.sessions.isEmpty || !claudeScan.sessions.isEmpty || !codexScan.sourceReceipts.isEmpty || !claudeScan.sourceReceipts.isEmpty {
             try store.upsert(.init(
                 records: codexScan.records + claudeScan.records,
                 sessions: codexScan.sessions + claudeScan.sessions,
