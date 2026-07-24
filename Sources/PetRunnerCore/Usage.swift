@@ -1131,7 +1131,9 @@ private extension String {
 }
 
 public enum LocalUsageSource {
-    public static let historicalParserRevision = "historical-sessions-v2+analytics-project-path"
+    /// Bump when Claude/Codex JSONL → ledger mapping changes so receipts
+    /// invalidate and UsageCoordinator can rebuild provider rows cleanly.
+    public static let historicalParserRevision = "historical-sessions-v3+claude-stream-dedup"
 
     public static func codexRecords(root: URL, now: Date = .now) -> [AgentUsageRecord] {
         codexScan(root: root, now: now).records
@@ -1173,7 +1175,15 @@ public enum LocalUsageSource {
     }
 
     public static func codexSourceFiles(root: URL) -> [URL] {
-        uniqueFiles(jsonlFiles(in: root.appendingPathComponent("sessions", isDirectory: true)) + jsonlFiles(in: root.appendingPathComponent("archived_sessions", isDirectory: true)))
+        // ccusage / CodexBar: scan live + archived, but never bill the same
+        // rollout basename twice when Codex copies a session into archived_sessions.
+        let live = jsonlFiles(in: root.appendingPathComponent("sessions", isDirectory: true))
+        let archived = jsonlFiles(in: root.appendingPathComponent("archived_sessions", isDirectory: true))
+        var byBasename: [String: URL] = [:]
+        for file in archived + live {
+            byBasename[file.lastPathComponent.lowercased()] = file
+        }
+        return uniqueFiles(Array(byBasename.values))
     }
 
     public static func claudeSourceFiles(roots: [URL]) -> [URL] {
@@ -1285,7 +1295,12 @@ public enum LocalUsageSource {
         var startedAt = fallbackDate
         var lastActivityAt = fallbackDate
         var sawEvent = false
-        var records: [AgentUsageRecord] = []
+        // Claude Code streams multiple assistant JSONL rows per API response that
+        // share message.id + requestId while output_tokens grow. CodexBar / fixed
+        // ccusage keep the final row (last-wins). Keying on uuid over-bills input
+        // by the chunk count. ccgauge's earliest-wins under-counts output.
+        var keyedRecords: [String: AgentUsageRecord] = [:]
+        var unkeyedRecords: [AgentUsageRecord] = []
 
         forEachJSONObject(in: file) { line, object in
             let occurredAt = date(object["timestamp"]) ?? fallbackDate
@@ -1317,9 +1332,41 @@ public enum LocalUsageSource {
             let tokens = UsageTokenBreakdown(input: int(usage["input_tokens"]), cachedInput: int(usage["cache_read_input_tokens"]), cacheCreation: cacheCreation, cacheCreation1h: cacheCreation1h, output: int(usage["output_tokens"]))
             guard tokens.total > 0 else { return }
             let recordModel = string(message["model"]); model = recordModel ?? model
-            let sourceID = string(object["uuid"]) ?? string(message["id"]) ?? "\(occurredAt.timeIntervalSince1970):\(line)"
-            records.append(.init(id: "claude:\(sessionID):\(sourceID)", provider: .claude, sessionID: sessionID, occurredAt: occurredAt, model: recordModel, tokens: tokens, cost: BundledPricing.cost(model: recordModel, tokens: tokens, occurredAt: occurredAt)))
+            let messageID = string(message["id"])
+            let requestID = string(object["requestId"])
+            let sourceID: String
+            let dedupeKey: String?
+            if let messageID, let requestID {
+                sourceID = "\(messageID):\(requestID)"
+                dedupeKey = sourceID
+            } else if let messageID {
+                // Third-party / older transports omit requestId; message.id alone
+                // still collapses repeated JSONL rewrites (ccusage #985).
+                sourceID = "mid:\(messageID)"
+                dedupeKey = sourceID
+            } else if let requestID {
+                sourceID = "req:\(requestID)"
+                dedupeKey = sourceID
+            } else {
+                sourceID = string(object["uuid"]) ?? "\(occurredAt.timeIntervalSince1970):\(line)"
+                dedupeKey = nil
+            }
+            let record = AgentUsageRecord(
+                id: "claude:\(sessionID):\(sourceID)",
+                provider: .claude,
+                sessionID: sessionID,
+                occurredAt: occurredAt,
+                model: recordModel,
+                tokens: tokens,
+                cost: BundledPricing.cost(model: recordModel, tokens: tokens, occurredAt: occurredAt)
+            )
+            if let dedupeKey {
+                keyedRecords[dedupeKey] = record
+            } else {
+                unkeyedRecords.append(record)
+            }
         }
+        let records = Array(keyedRecords.values) + unkeyedRecords
         let session = HistoricalUsageSession(provider: .claude, sessionID: sessionID, projectName: projectName, title: title, startedAt: startedAt, lastActivityAt: lastActivityAt, model: model, projectPath: projectPath)
         return .init(records: records, sessions: sawEvent ? [session] : [])
     }

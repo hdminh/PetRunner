@@ -59,6 +59,78 @@ struct UsageTests {
         #expect(records[0].tokens.total == 40)
     }
 
+    @Test func claudeStreamingChunksDedupByMessageAndRequestKeepLastWins() throws {
+        // Matches CodexBar / fixed ccusage: streaming snapshots share message.id +
+        // requestId while output_tokens grow. Counting every uuid over-bills input.
+        let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+        let projects = root.appendingPathComponent("projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        let file = projects.appendingPathComponent("session-stream.jsonl")
+        let lines = [
+            #"{"type":"assistant","uuid":"u1","requestId":"req-1","sessionId":"sess","timestamp":"2026-07-22T10:00:00Z","message":{"id":"msg_abc","model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"cache_read_input_tokens":200,"output_tokens":5}}}"#,
+            #"{"type":"assistant","uuid":"u2","requestId":"req-1","sessionId":"sess","timestamp":"2026-07-22T10:00:01Z","message":{"id":"msg_abc","model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"cache_read_input_tokens":200,"output_tokens":50}}}"#,
+            #"{"type":"assistant","uuid":"u3","requestId":"req-1","sessionId":"sess","timestamp":"2026-07-22T10:00:02Z","message":{"id":"msg_abc","model":"claude-sonnet-4-5","usage":{"input_tokens":1000,"cache_read_input_tokens":200,"output_tokens":200}}}"#,
+            #"{"type":"assistant","uuid":"u4","requestId":"req-2","sessionId":"sess","timestamp":"2026-07-22T10:01:00Z","message":{"id":"msg_def","model":"claude-sonnet-4-5","usage":{"input_tokens":10,"output_tokens":4}}}"#,
+        ].joined(separator: "\n")
+        try Data(lines.utf8).write(to: file)
+
+        let records = LocalUsageSource.claudeRecords(roots: [projects]).sorted { $0.occurredAt < $1.occurredAt }
+        #expect(records.count == 2)
+        #expect(records[0].tokens == UsageTokenBreakdown(input: 1000, cachedInput: 200, output: 200))
+        #expect(records[1].tokens == UsageTokenBreakdown(input: 10, output: 4))
+        let expectedCost = BundledPricing.cost(
+            model: "claude-sonnet-4-5",
+            tokens: .init(input: 1000, cachedInput: 200, output: 200),
+            occurredAt: records[0].occurredAt
+        )
+        #expect(approximatelyEqual(records[0].cost.usd, expectedCost.usd ?? -1))
+        #expect(records[0].id.contains("msg_abc:req-1"))
+        // Without dedup, three streaming chunks would bill input 3× (~$0.009 vs ~$0.003).
+        let inflated = BundledPricing.cost(
+            model: "claude-sonnet-4-5",
+            tokens: .init(input: 3000, cachedInput: 600, output: 255)
+        ).usd ?? 0
+        #expect((records[0].cost.usd ?? 0) < inflated * 0.5)
+    }
+
+    @Test func claudeDedupFallsBackToMessageIdWhenRequestIdMissing() throws {
+        let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+        let projects = root.appendingPathComponent("projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        let file = projects.appendingPathComponent("session-mid.jsonl")
+        let lines = [
+            #"{"type":"assistant","uuid":"a","sessionId":"sess","timestamp":"2026-07-22T10:00:00Z","message":{"id":"msg_only","model":"claude-sonnet-4-5","usage":{"input_tokens":100,"output_tokens":1}}}"#,
+            #"{"type":"assistant","uuid":"b","sessionId":"sess","timestamp":"2026-07-22T10:00:01Z","message":{"id":"msg_only","model":"claude-sonnet-4-5","usage":{"input_tokens":100,"output_tokens":40}}}"#,
+        ].joined(separator: "\n")
+        try Data(lines.utf8).write(to: file)
+
+        let records = LocalUsageSource.claudeRecords(roots: [projects])
+        #expect(records.count == 1)
+        #expect(records[0].tokens.output == 40)
+        #expect(records[0].id.contains("mid:msg_only"))
+    }
+
+    @Test func codexSourceFilesPreferLiveBasenameOverArchivedCopy() throws {
+        let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
+        let liveDir = root.appendingPathComponent("sessions/2026/07/22", isDirectory: true)
+        let archivedDir = root.appendingPathComponent("archived_sessions", isDirectory: true)
+        try FileManager.default.createDirectory(at: liveDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: archivedDir, withIntermediateDirectories: true)
+        let name = "rollout-dup.jsonl"
+        let tokenLine = #"{"timestamp":"2026-07-22T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":2}}}}"#
+        let meta = #"{"timestamp":"2026-07-22T09:59:00Z","type":"session_meta","payload":{"id":"same-session","model":"gpt-5-codex"}}"#
+        let contents = [meta, tokenLine].joined(separator: "\n")
+        try Data(contents.utf8).write(to: liveDir.appendingPathComponent(name))
+        try Data(contents.utf8).write(to: archivedDir.appendingPathComponent(name))
+
+        let files = LocalUsageSource.codexSourceFiles(root: root)
+        #expect(files.count == 1)
+        #expect(files[0].path.contains("/sessions/"))
+        let records = LocalUsageSource.codexRecords(root: root)
+        #expect(records.count == 1)
+        #expect(records[0].tokens.total == 12)
+    }
+
     @Test func pricingCatalogListsClaudeAndCodexRatesPerMillion() {
         let all = BundledPricing.catalog()
         #expect(all.contains { $0.id == "claude-sonnet-4-5" && $0.provider == .claude })

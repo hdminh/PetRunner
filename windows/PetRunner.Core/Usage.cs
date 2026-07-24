@@ -176,7 +176,13 @@ public sealed class LocalUsageIndex
 
     private IEnumerable<(string Path, UsageProvider Provider)> SourceFiles()
     {
-        foreach (var file in JsonlFiles(Path.Combine(codexRoot, "sessions"))) yield return (file, UsageProvider.Codex);
+        // Prefer live sessions over archived copies of the same basename (ccusage/CodexBar).
+        var codexByBasename = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in JsonlFiles(Path.Combine(codexRoot, "archived_sessions")))
+            codexByBasename[Path.GetFileName(file)] = file;
+        foreach (var file in JsonlFiles(Path.Combine(codexRoot, "sessions")))
+            codexByBasename[Path.GetFileName(file)] = file;
+        foreach (var file in codexByBasename.Values) yield return (file, UsageProvider.Codex);
         foreach (var root in claudeRoots)
             foreach (var file in JsonlFiles(root)) yield return (file, UsageProvider.Claude);
     }
@@ -247,7 +253,10 @@ public sealed class LocalUsageIndex
 
     private static IReadOnlyList<UsageRecord> ParseClaude(string path, DateTimeOffset fallbackDate)
     {
-        var records = new List<UsageRecord>();
+        // Last-wins on message.id + requestId (CodexBar / fixed ccusage). Claude Code
+        // streams multiple assistant rows per API call; uuid/line keys over-bill input.
+        var keyed = new Dictionary<string, UsageRecord>(StringComparer.Ordinal);
+        var unkeyed = new List<UsageRecord>();
         foreach (var (line, root) in JsonObjects(path))
         {
             if (Text(root, "type") != "assistant" || !root.TryGetProperty("message", out var message) ||
@@ -260,9 +269,35 @@ public sealed class LocalUsageIndex
             if (tokens.Total <= 0) continue;
             var model = Text(message, "model");
             var session = Text(root, "sessionId") ?? Text(root, "session_id") ?? Path.GetFileNameWithoutExtension(path);
-            records.Add(new UsageRecord(SourceId("claude", path, line), UsageProvider.Claude, session, Date(root, fallbackDate), model, tokens, UsagePricing.Cost(model, tokens)));
+            var messageId = Text(message, "id");
+            var requestId = Text(root, "requestId");
+            string sourceId;
+            string? dedupeKey;
+            if (!string.IsNullOrEmpty(messageId) && !string.IsNullOrEmpty(requestId))
+            {
+                sourceId = $"claude:{session}:{messageId}:{requestId}";
+                dedupeKey = $"{messageId}:{requestId}";
+            }
+            else if (!string.IsNullOrEmpty(messageId))
+            {
+                sourceId = $"claude:{session}:mid:{messageId}";
+                dedupeKey = $"mid:{messageId}";
+            }
+            else if (!string.IsNullOrEmpty(requestId))
+            {
+                sourceId = $"claude:{session}:req:{requestId}";
+                dedupeKey = $"req:{requestId}";
+            }
+            else
+            {
+                sourceId = SourceId("claude", path, line);
+                dedupeKey = null;
+            }
+            var record = new UsageRecord(sourceId, UsageProvider.Claude, session, Date(root, fallbackDate), model, tokens, UsagePricing.Cost(model, tokens));
+            if (dedupeKey is null) unkeyed.Add(record);
+            else keyed[dedupeKey] = record;
         }
-        return records;
+        return keyed.Values.Concat(unkeyed).OrderBy(record => record.OccurredAt).ToArray();
     }
 
     private static IReadOnlyList<(int Line, JsonElement Root)> JsonObjects(string path)
