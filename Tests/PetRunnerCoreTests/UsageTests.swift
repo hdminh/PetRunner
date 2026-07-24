@@ -74,23 +74,24 @@ struct UsageTests {
         ].joined(separator: "\n")
         try Data(lines.utf8).write(to: file)
 
-        let records = LocalUsageSource.claudeRecords(roots: [projects]).sorted { $0.occurredAt < $1.occurredAt }
+        let records = LocalUsageSource.claudeRecords(roots: [projects])
         #expect(records.count == 2)
-        #expect(records[0].tokens == UsageTokenBreakdown(input: 1000, cachedInput: 200, output: 200))
-        #expect(records[1].tokens == UsageTokenBreakdown(input: 10, output: 4))
+        let streamed = records.first { $0.id.contains("msg_abc:req-1") }
+        let second = records.first { $0.id.contains("msg_def:req-2") }
+        #expect(streamed?.tokens == UsageTokenBreakdown(input: 1000, cachedInput: 200, output: 200))
+        #expect(second?.tokens == UsageTokenBreakdown(input: 10, output: 4))
         let expectedCost = BundledPricing.cost(
             model: "claude-sonnet-4-5",
             tokens: .init(input: 1000, cachedInput: 200, output: 200),
-            occurredAt: records[0].occurredAt
+            occurredAt: streamed?.occurredAt
         )
-        #expect(approximatelyEqual(records[0].cost.usd, expectedCost.usd ?? -1))
-        #expect(records[0].id.contains("msg_abc:req-1"))
-        // Without dedup, three streaming chunks would bill input 3× (~$0.009 vs ~$0.003).
+        #expect(approximatelyEqual(streamed?.cost.usd, expectedCost.usd ?? -1))
+        // Without dedup, three streaming chunks would bill input 3×.
         let inflated = BundledPricing.cost(
             model: "claude-sonnet-4-5",
             tokens: .init(input: 3000, cachedInput: 600, output: 255)
         ).usd ?? 0
-        #expect((records[0].cost.usd ?? 0) < inflated * 0.5)
+        #expect((streamed?.cost.usd ?? 0) < inflated * 0.5)
     }
 
     @Test func claudeDedupFallsBackToMessageIdWhenRequestIdMissing() throws {
