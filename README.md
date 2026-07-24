@@ -131,9 +131,16 @@ platform notes (including MSIX packaging) are in
 
 ## Publishing packages
 
-GitHub Releases run `.github/workflows/publish-packages.yml` (npm + GitHub
-Packages). Package versions are immutable after publish; bump before any
-follow-up release. Do not publish unless explicitly intended.
+Use **Actions → Release → Run workflow** to cut a new version:
+
+1. Choose `patch` / `minor` / `major`, `current` (release what’s already in
+   `package.json`), or `custom` + exact version
+2. Leave `dry_run` off to commit the bump to `main` and create tag `vX.Y.Z`
+3. `publish-packages.yml` runs on that GitHub Release and publishes npm + GitHub Packages
+4. Optional: keep `attach_windows` on to build Windows `.exe` assets onto the same release
+
+Package versions are immutable after npm publish; always bump before a follow-up
+release. Do not publish unless explicitly intended.
 
 ## License
 

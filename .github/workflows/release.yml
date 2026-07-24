@@ -1,0 +1,139 @@
+name: Release
+
+# Bumps package.json + macOS Info.plist, commits to main, and creates a GitHub
+# Release (tag vX.Y.Z). Publishing to npm/GitHub Packages is handled by
+# publish-packages.yml on release:published.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - current
+          - custom
+        default: patch
+      version:
+        description: Exact version when bump=custom (e.g. 1.2.3)
+        required: false
+        type: string
+      dry_run:
+        description: Compute the next version without committing or releasing
+        required: true
+        type: boolean
+        default: false
+      attach_windows:
+        description: Also run Windows Release to attach .exe assets to the tag
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          # Need a token that can push to main even with branch protection
+          # when "Allow GitHub Actions to create and approve pull requests"
+          # / ruleset bypass for GITHUB_TOKEN is enabled.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Resolve bump target
+        id: bump
+        env:
+          BUMP: ${{ inputs.bump }}
+          CUSTOM_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "$BUMP" = "custom" ]; then
+            if [ -z "${CUSTOM_VERSION}" ]; then
+              echo "version input is required when bump=custom" >&2
+              exit 1
+            fi
+            TARGET="$CUSTOM_VERSION"
+          else
+            TARGET="$BUMP"
+          fi
+          RESULT="$(node script/bump_version.mjs "$TARGET")"
+          echo "$RESULT" | tee bump.json
+          VERSION="$(node -p 'JSON.parse(process.argv[1]).version' "$RESULT")"
+          TAG="$(node -p 'JSON.parse(process.argv[1]).tag' "$RESULT")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Verify package
+        run: |
+          npm test
+          npm pack --dry-run
+
+      - name: Stop on dry run
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "Dry run only. Would release ${{ steps.bump.outputs.tag }} from package.json ${{ steps.bump.outputs.version }}."
+          git checkout -- package.json Support/Info.plist
+
+      - name: Commit version bump
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- package.json Support/Info.plist; then
+            echo "No version file changes (bump=current)."
+          else
+            git add package.json Support/Info.plist
+            git commit -m "chore(release): ${{ steps.bump.outputs.version }}"
+            git push origin HEAD:main
+          fi
+
+      - name: Create GitHub Release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.bump.outputs.tag }}"
+          VERSION="${{ steps.bump.outputs.version }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists." >&2
+            exit 1
+          fi
+          gh release create "$TAG" \
+            --title "PetRunner $VERSION" \
+            --generate-notes \
+            --latest \
+            --target main
+          echo "Created $TAG — publish-packages.yml will run on release:published."
+
+      - name: Trigger Windows Release assets
+        if: ${{ !inputs.dry_run && inputs.attach_windows }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh workflow run windows-release.yml \
+            --ref main \
+            -f release_tag="${{ steps.bump.outputs.tag }}"
+          echo "Dispatched Windows Release for ${{ steps.bump.outputs.tag }}."
