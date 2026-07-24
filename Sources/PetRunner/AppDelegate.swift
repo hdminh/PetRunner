@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var petsDirectorySource = "default"
     private var pets: [PetDescriptor] = []
     private var failures: [PetFailure] = []
+    private var pendingCLISetup = CLISetupApplication()
 
     init(launchesInBackground: Bool = false) {
         self.launchesInBackground = launchesInBackground
@@ -37,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         configureMainMenu()
+        pendingCLISetup.applyPreferences(preferences)
         petsDirectory = resolvePetsDirectory()
         installBundledDefaultPetIfNeeded()
         preferences.migrateLegacyMonitorProviderIfNeeded()
@@ -91,17 +93,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay.setAutonomyConfiguration(preferences.autonomyConfiguration)
         reloadPets()
         configureUsageCoordinator()
-        if preferences.monitorEnabled, preferences.monitorProvider != nil {
-            do {
-                try startMonitorBridge()
-                restoreRecoveredMonitorSessions()
-            } catch {
-                logger.error("Failed to start monitor bridge: \(error.localizedDescription, privacy: .public)")
-            }
-        } else {
-            AgentMonitorBridge.removeDescriptor()
-            AgentMonitorBridge.removeRecoveryJournal()
-        }
+        activateMonitorFromPreferences()
+
         configureDashboardServer()
         DistributedNotificationCenter.default().addObserver(
             self,
@@ -243,6 +236,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 self.logger.error("Failed to install monitor hooks: \(error.localizedDescription, privacy: .public)")
                 self.showMonitorError("PetRunner did not enable monitoring. \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func activateMonitorFromPreferences() {
+        guard preferences.monitorEnabled, let provider = preferences.monitorProvider else {
+            AgentMonitorBridge.removeDescriptor()
+            AgentMonitorBridge.removeRecoveryJournal()
+            if pendingCLISetup.preferencesApplied {
+                try? ProviderHookInstaller().removeAll()
+            }
+            return
+        }
+        do {
+            if pendingCLISetup.shouldEnableMonitor {
+                try enableMonitor(provider: provider)
+            } else {
+                try startMonitorBridge()
+            }
+            restoreRecoveredMonitorSessions()
+        } catch {
+            logger.error("Failed to activate monitor: \(error.localizedDescription, privacy: .public)")
+            if pendingCLISetup.preferencesApplied {
+                showMonitorError("PetRunner saved your setup but could not install Agent Monitor hooks. \(error.localizedDescription)")
             }
         }
     }

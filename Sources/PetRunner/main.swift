@@ -14,6 +14,9 @@ if arguments.contains("--agent-monitor-cleanup") {
         exit(1)
     }
 }
+if arguments.contains("--apply-cli-setup") {
+    exit(CLISetupCommand.apply())
+}
 
 let launchesInBackground = arguments.contains("--background")
 switch SingleInstanceCoordinator.acquire() {

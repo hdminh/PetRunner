@@ -13,6 +13,9 @@ test("start is the default command", () => {
     command: "start",
     force: false,
     petsDir: undefined,
+    yes: false,
+    noSetup: false,
+    setup: false,
   });
 });
 

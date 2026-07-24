@@ -17,6 +17,15 @@ internal sealed class AppSettings
     public AutonomousActionKind[] EnabledAutonomousActions { get; set; } = Enum.GetValues<AutonomousActionKind>();
     public ProviderBudgetSettings ClaudeBudget { get; set; } = new();
     public ProviderBudgetSettings CodexBudget { get; set; } = new();
+    public bool ClaudeEnabled { get; set; } = true;
+    public bool CodexEnabled { get; set; } = true;
+
+    public bool IsProviderEnabled(UsageProvider provider) => provider switch
+    {
+        UsageProvider.Claude => ClaudeEnabled,
+        UsageProvider.Codex => CodexEnabled,
+        _ => true,
+    };
 
     public AutonomyConfiguration GetAutonomyConfiguration()
     {

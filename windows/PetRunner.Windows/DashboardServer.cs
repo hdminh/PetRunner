@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -15,6 +16,8 @@ internal sealed record DashboardHostSnapshot(
     AutonomyConfiguration Autonomy,
     ProviderBudgetSettings ClaudeBudget,
     ProviderBudgetSettings CodexBudget,
+    bool ClaudeEnabled,
+    bool CodexEnabled,
     string PetsDirectory,
     string PetsDirectorySource,
     bool PetsDirectoryEditable);
@@ -216,7 +219,7 @@ internal sealed class DashboardServer : IDisposable
     private object State()
     {
         var snapshot = callbacks.Snapshot();
-        var records = usage.Records();
+        var records = EnabledRecords(snapshot, usage.Records());
         var today = UsageAnalytics.Filter(records, new UsageFilter("today"));
         var month = UsageAnalytics.Filter(records, new UsageFilter("month"));
         var todayTotals = UsageAnalytics.Aggregate(today);
@@ -248,6 +251,12 @@ internal sealed class DashboardServer : IDisposable
                 topModel,
                 sessionCount = todayTotals.SessionCount,
                 monthCost = monthTotals.KnownCostUsd,
+            },
+            providers = new
+            {
+                claude = new { enabled = snapshot.ClaudeEnabled },
+                codex = new { enabled = snapshot.CodexEnabled },
+                cursor = new { enabled = false },
             },
             pets = snapshot.Pets.Select(pet => new { pet.Id, name = pet.DisplayName, pet.Description, version = (int)pet.Version }),
             pet = new
@@ -352,7 +361,8 @@ internal sealed class DashboardServer : IDisposable
 
     private object SessionPayload(string key)
     {
-        var records = usage.Records();
+        var snapshot = callbacks.Snapshot();
+        var records = EnabledRecords(snapshot, usage.Records());
         var session = UsageAnalytics.Sessions(records).FirstOrDefault(candidate => SessionKey(candidate) == key)
             ?? throw new DashboardApiException("session_not_found", "Session not found.", 404);
         var matching = records.Where(record => record.Provider == session.Provider && record.SessionId == session.Id).OrderBy(record => record.OccurredAt).ToArray();
@@ -389,9 +399,23 @@ internal sealed class DashboardServer : IDisposable
                 throw new DashboardApiException("invalid_provider", "provider must be claude or codex.");
             provider = parsed;
         }
-        try { return UsageAnalytics.Filter(usage.Records(), new UsageFilter(range, provider, request.QueryString["model"])); }
+        try
+        {
+            var snapshot = callbacks.Snapshot();
+            return UsageAnalytics.Filter(
+                EnabledRecords(snapshot, usage.Records()),
+                new UsageFilter(range, provider, request.QueryString["model"]));
+        }
         catch (ArgumentException error) { throw new DashboardApiException("invalid_range", error.Message); }
     }
+
+    private static IReadOnlyList<UsageRecord> EnabledRecords(DashboardHostSnapshot snapshot, IReadOnlyList<UsageRecord> records) =>
+        records.Where(record => record.Provider switch
+        {
+            UsageProvider.Claude => snapshot.ClaudeEnabled,
+            UsageProvider.Codex => snapshot.CodexEnabled,
+            _ => true,
+        }).ToArray();
 
     private async Task WritePreview(HttpListenerResponse response, HttpListenerRequest request, string petId)
     {

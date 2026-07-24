@@ -171,6 +171,8 @@ public partial class App : System.Windows.Application
         settings.GetAutonomyConfiguration(),
         settings.ClaudeBudget,
         settings.CodexBudget,
+        settings.ClaudeEnabled,
+        settings.CodexEnabled,
         petsPath,
         petsDirectorySource,
         !petsDirectoryLockedByCLI);
