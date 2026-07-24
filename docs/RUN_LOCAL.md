@@ -31,6 +31,11 @@ Install Node.js 18 or later, then run:
 npx @hdminh/pet-runner start
 ```
 
+In an interactive terminal the CLI walks through pets directory, selected pet,
+Agent Monitor (macOS), usage/analytics providers, autonomy, and menu bar
+visibility. Pass `--yes` to keep current preferences / defaults, or run
+`npx @hdminh/pet-runner setup` later to change them.
+
 The first run builds and installs the app locally. Subsequent runs start the
 pet runner in the background and do not open a window. Open `PetRunner.app`
 from Applications, Finder, Spotlight, the menu bar icon, or the pet's

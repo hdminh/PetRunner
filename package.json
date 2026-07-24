@@ -1,6 +1,6 @@
 {
   "name": "@hdminh/pet-runner",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Build and run PetRunner locally on macOS and Windows.",
   "license": "MIT",
   "type": "module",
@@ -19,7 +19,7 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node --test test/cli.test.js",
+    "test": "node --test test/*.test.js",
     "pack:check": "npm pack --dry-run",
     "dashboard:dev": "vite --config DashboardWeb/vite.config.ts",
     "dashboard:build": "vite build --config DashboardWeb/vite.config.ts",

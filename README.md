@@ -16,6 +16,11 @@ Source: [github.com/hdminh/PetRunner](https://github.com/hdminh/PetRunner)
 npx @hdminh/pet-runner start
 ```
 
+On a TTY, the CLI asks for pets directory, which pet to show, Agent Monitor
+(macOS), which providers feed Usage/Analytics, autonomy, and menu bar
+visibility before building. Use `--yes` to skip the wizard, `--setup` to run
+it again, or `npx @hdminh/pet-runner setup` on its own.
+
 On first use, the CLI checks the platform toolchain and builds PetRunner locally.
 Later runs open the installed build immediately—no repository clone required.
 
