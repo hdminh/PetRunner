@@ -18,7 +18,7 @@ internal static class UsageTests
         fixture.WriteCodex("session-a",
             """{"timestamp":"2026-07-21T09:59:00Z","payload":{"conversation_id":"session-a","modelName":"gpt-5-codex"}}""",
             """{"timestamp":"2026-07-21T10:00:00Z","payload":{"type":"token_count","conversation_id":"session-a","info":{"total_token_usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3,"reasoning_output_tokens":1}}}}""",
-            """{"timestamp":"2026-07-21T10:01:00Z","payload":{"type":"token_count","conversation_id":"session-a","info":{"model":"gpt-5-codex","total_token_usage":{"input_tokens":14,"cached_input_tokens":4,"output_tokens":7,"reasoning_output_tokens":2}}}}""
+            """{"timestamp":"2026-07-21T10:01:00Z","payload":{"type":"token_count","conversation_id":"session-a","info":{"model":"gpt-5-codex","total_token_usage":{"input_tokens":14,"cached_input_tokens":4,"output_tokens":7,"reasoning_output_tokens":2}}}}"""
         );
 
         var records = fixture.Index.Records(forceRefresh: true).Where(record => record.Provider == UsageProvider.Codex).ToArray();
