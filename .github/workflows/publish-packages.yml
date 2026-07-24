@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 22.14.0
+          node-version: 24
       - run: npm test
       - run: npm pack --dry-run
       - name: Check release tag version
@@ -42,13 +42,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      # Trusted Publishing (OIDC): do not set registry-url. That writes an empty
+      # _authToken into .npmrc and can produce incomplete provenance attestations
+      # that make npmjs.com show "Failed to fetch provenance details".
       - uses: actions/setup-node@v6
         with:
-          node-version: 22.14.0
-          registry-url: https://registry.npmjs.org
-      # Trusted publishing requires npm >= 11.5.1; Node 22.14.0 bundles npm 10, and npm 12 drops Node 22.14.
-      - run: npm install -g npm@^11
-      - run: npm publish --access public
+          node-version: 24
+          package-manager-cache: false
+      - name: Publish to npm
+        run: |
+          npm --version
+          # Clear any inherited classic-token hint so npm uses OIDC.
+          unset NODE_AUTH_TOKEN NPM_TOKEN
+          npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ""
+          NPM_TOKEN: ""
 
   publish-github:
     needs: verify
@@ -58,9 +67,10 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 22.14.0
+          node-version: 24
           registry-url: https://npm.pkg.github.com
           scope: '@hdminh'
+          package-manager-cache: false
       - run: npm publish --registry=https://npm.pkg.github.com
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

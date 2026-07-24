@@ -5,7 +5,7 @@ It reads `${CODEX_HOME:-~/.codex}/pets` and never starts, embeds, or connects to
 Codex.
 
 <p align="center">
-  <img src="docs/images/hero.png" alt="PetRunner desktop pet with agent monitor bubble" width="420" />
+  <img src="https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/hero.png" alt="PetRunner desktop pet with agent monitor bubble" width="420" />
 </p>
 
 Source: [github.com/hdminh/PetRunner](https://github.com/hdminh/PetRunner)
@@ -73,29 +73,29 @@ Monitor provider.
 KPIs for today’s tokens and cost, month-to-date spend, provider cards, daily
 volume, and an activity heatmap of when you usually work.
 
-![Overview tab](docs/images/overview.png)
+![Overview tab](https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/overview.png)
 
 ### Providers
 
 Per-provider **Usage** and **Pricing** panels, spend charts, model breakdowns,
 and daily / monthly budgets.
 
-![Providers usage](docs/images/providers.png)
+![Providers usage](https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/providers.png)
 
 ### Analytics
 
 **Sessions**, **Projects**, and **Models**—filter by Claude, Codex, or Cursor.
 
-![Analytics sessions](docs/images/analytics-sessions.png)
+![Analytics sessions](https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/analytics-sessions.png)
 
-![Analytics models](docs/images/analytics-models.png)
+![Analytics models](https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/analytics-models.png)
 
 ### Pets
 
 Installed library, animation preview, size / menu-bar / folder settings, and
 optional autonomous motion.
 
-![Pets tab](docs/images/pets.png)
+![Pets tab](https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/pets.png)
 
 ### Monitor
 
@@ -103,7 +103,7 @@ Enable Agent Monitor for Claude Code, Codex, or Cursor; preview the desktop
 bubble; reset live session state. Activity labels are derived locally from
 lifecycle hooks—PetRunner never sends them to an LLM.
 
-![Monitor tab](docs/images/monitor.png)
+![Monitor tab](https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/monitor.png)
 
 ## Privacy
 
