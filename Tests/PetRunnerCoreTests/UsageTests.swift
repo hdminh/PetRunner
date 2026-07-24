@@ -59,9 +59,9 @@ struct UsageTests {
         #expect(records[0].tokens.total == 40)
     }
 
-    @Test func claudeStreamingChunksDedupByMessageAndRequestKeepLastWins() throws {
-        // Matches CodexBar / fixed ccusage: streaming snapshots share message.id +
-        // requestId while output_tokens grow. Counting every uuid over-bills input.
+    @Test func claudeStreamingChunksDedupByMessageAndRequestEarliestWins() throws {
+        // Matches ccgauge earliest-wins: streaming snapshots share message.id +
+        // requestId. Counting every uuid over-bills input.
         let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
         let projects = root.appendingPathComponent("projects", isDirectory: true)
         try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
@@ -78,11 +78,12 @@ struct UsageTests {
         #expect(records.count == 2)
         let streamed = records.first { $0.id.contains("msg_abc:req-1") }
         let second = records.first { $0.id.contains("msg_def:req-2") }
-        #expect(streamed?.tokens == UsageTokenBreakdown(input: 1000, cachedInput: 200, output: 200))
+        // ccgauge earliest-wins keeps the first streaming snapshot (output=5).
+        #expect(streamed?.tokens == UsageTokenBreakdown(input: 1000, cachedInput: 200, output: 5))
         #expect(second?.tokens == UsageTokenBreakdown(input: 10, output: 4))
         let expectedCost = BundledPricing.cost(
             model: "claude-sonnet-4-5",
-            tokens: .init(input: 1000, cachedInput: 200, output: 200),
+            tokens: .init(input: 1000, cachedInput: 200, output: 5),
             occurredAt: streamed?.occurredAt
         )
         #expect(approximatelyEqual(streamed?.cost.usd, expectedCost.usd ?? -1))
@@ -107,7 +108,7 @@ struct UsageTests {
 
         let records = LocalUsageSource.claudeRecords(roots: [projects])
         #expect(records.count == 1)
-        #expect(records[0].tokens.output == 40)
+        #expect(records[0].tokens.output == 1) // earliest-wins
         #expect(records[0].id.contains("mid:msg_only"))
     }
 
@@ -161,6 +162,7 @@ struct UsageTests {
         #expect(approximatelyEqual(direct.usd, 0.0004185))
         #expect(vertexAlias == direct)
         #expect(direct.pricingVersion == BundledPricing.version)
+        #expect(BundledPricing.version.contains("ccgauge"))
     }
 
     @Test func codexPricingDoesNotDoubleBillCachedInputAndRecognizesDatedAlias() {
@@ -190,22 +192,26 @@ struct UsageTests {
         #expect(UsageAggregate(records: [codex, claude]).totalTokens == 300)
     }
 
-    @Test func claudeOneHourCacheCreationAndLongContextRatesAreApplied() {
+    @Test func claudeOneHourCacheCreationMatchesCcgaugeCostFromUsage() {
+        // 100 input * 3e-6 + 10 * (2*3e-6) 1h write = 0.0003 + 0.00006 = 0.00036
         let oneHourCache = UsageTokenBreakdown(input: 100, cacheCreation: 10, cacheCreation1h: 10)
         #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-4-5", tokens: oneHourCache).usd, 0.00036))
 
+        // ccgauge drops 200k+ tiers — long prompts still bill at standard rates.
         let longContext = UsageTokenBreakdown(input: 200_001)
-        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-4-5", tokens: longContext).usd, 1.200006))
+        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-4-5", tokens: longContext).usd, 0.600003))
     }
 
-    @Test func historicalClaudeLongContextPricingUsesEventDate() {
+    @Test func ccgaugeStyleCostIgnoresLongContextSurchargeAndFallsBackByFamily() {
         let tokens = UsageTokenBreakdown(input: 200_001)
         let beforeChange = Date(timeIntervalSince1970: 1_700_000_000)
         let afterChange = Date(timeIntervalSince1970: 1_800_000_000)
 
-        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-4-6", tokens: tokens, occurredAt: beforeChange).usd, 1.200006))
+        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-4-6", tokens: tokens, occurredAt: beforeChange).usd, 0.600003))
         #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-4-6", tokens: tokens, occurredAt: afterChange).usd, 0.600003))
-        #expect(BundledPricing.cost(model: "unpriced-model", tokens: tokens).usd == nil)
+        // Unknown sonnet-shaped id → family fallback (claude-sonnet-4-6 rates).
+        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-9-9-experimental", tokens: .init(input: 1_000_000)).usd, 3.0))
+        #expect(BundledPricing.cost(model: "totally-unknown-widget", tokens: tokens).usd == nil)
     }
 
     @Test func storeRoundTripsCacheCreationCategories() throws {

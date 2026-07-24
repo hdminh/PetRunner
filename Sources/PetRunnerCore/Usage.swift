@@ -623,9 +623,9 @@ public enum BudgetPolicy {
 }
 
 public enum BundledPricing {
-    /// Pricing snapshot ported from CodexBar's MIT CostUsage catalog. Rates
-    /// are API-equivalent USD/token and are intentionally release-versioned.
-    public static let version = "2026-07-23"
+    /// API-equivalent USD/token rates aligned with ccgauge's LiteLLM snapshot
+    /// + `costFromUsage` (no long-context surcharge tiers). Versioned for ledger rebuilds.
+    public static let version = "2026-07-24-ccgauge"
 
     public struct ResolvedRates: Equatable, Sendable {
         public let input: Double
@@ -702,30 +702,22 @@ public enum BundledPricing {
         "claude-sonnet-4-6": .init(input: 3e-6, cachedInput: 3e-7, cacheCreation: 3.75e-6, output: 1.5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
     ]
 
-    // Claude removed the long-context surcharge for these model families in
-    // March 2026. Historical records must retain the rate active at use time.
-    private static let claudeFullContextStandardPricingCutoff = Date(timeIntervalSince1970: 1_773_360_000)
-    private static let claudeHistoricalLongContextRates: [String: Rates] = [
-        "claude-opus-4-6": .init(input: 5e-6, cachedInput: 5e-7, cacheCreation: 6.25e-6, output: 2.5e-5, threshold: 200_000, inputAboveThreshold: 1e-5, cachedInputAboveThreshold: 1e-6, cacheCreationAboveThreshold: 1.25e-5, outputAboveThreshold: 3.75e-5),
-        "claude-sonnet-4-6": .init(input: 3e-6, cachedInput: 3e-7, cacheCreation: 3.75e-6, output: 1.5e-5, threshold: 200_000, inputAboveThreshold: 6e-6, cachedInputAboveThreshold: 6e-7, cacheCreationAboveThreshold: 7.5e-6, outputAboveThreshold: 2.25e-5),
-    ]
+    // Long-context / date-gated surcharge tables intentionally omitted to match
+    // ccgauge (LiteLLM snapshot drops `*_above_200k` tiers).
 
-    /// API-equivalent calculated cost. Unknown models remain visible but are
-    /// intentionally unpriced instead of inheriting a neighbouring model.
+    /// API-equivalent calculated cost matching ccgauge `costFromUsage`.
+    /// Unknown Claude/Codex models fall back to the latest family rates
+    /// (ccgauge `FALLBACK_BY_FAMILY` / `FALLBACK_FAMILY_OPENAI`); otherwise unpriced.
     public static func cost(model: String?, tokens: UsageTokenBreakdown, occurredAt: Date? = nil) -> UsageCost {
+        // occurredAt retained for call-site compatibility; ccgauge does not date-gate rates.
+        _ = occurredAt
         guard let rawModel = model?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), !rawModel.isEmpty else {
             return UsageCost(usd: nil, provenance: .unavailable)
         }
-        let claudeModel = normalizeClaudeModel(rawModel)
-        if let rates = claudeRates[claudeModel] {
-            if let occurredAt, occurredAt < claudeFullContextStandardPricingCutoff,
-               let historicalRates = claudeHistoricalLongContextRates[claudeModel]
-            {
-                return calculated(claudeCost(rates: historicalRates, tokens: tokens), version: version)
-            }
+        if let rates = resolveClaudeRates(rawModel) {
             return calculated(claudeCost(rates: rates, tokens: tokens), version: version)
         }
-        if let rates = codexRates[normalizeCodexModel(rawModel)] {
+        if let rates = resolveCodexRates(rawModel) {
             return calculated(codexCost(rates: rates, tokens: tokens), version: version)
         }
         return UsageCost(usd: nil, provenance: .unavailable)
@@ -737,8 +729,7 @@ public enum BundledPricing {
         guard let rawModel = model?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), !rawModel.isEmpty else {
             return nil
         }
-        let rates = claudeRates[normalizeClaudeModel(rawModel)] ?? codexRates[normalizeCodexModel(rawModel)]
-        guard let rates else { return nil }
+        guard let rates = resolveClaudeRates(rawModel) ?? resolveCodexRates(rawModel) else { return nil }
         return ResolvedRates(input: rates.input, cachedInput: rates.cachedInput, cacheCreation: rates.cacheCreation, output: rates.output)
     }
 
@@ -805,30 +796,64 @@ public enum BundledPricing {
         UsageCost(usd: value, provenance: .calculated, pricingVersion: version)
     }
 
+    /// ccgauge Codex path: bill non-cached input + cache read + output at base
+    /// rates only. Long-context / priority tiers are omitted (ccgauge drops them).
     private static func codexCost(rates: Rates, tokens: UsageTokenBreakdown) -> Double {
         let totalInput = tokens.input
         let cached = min(tokens.cachedInput, totalInput)
         let cacheCreation = min(tokens.cacheCreation, totalInput - cached)
         let normal = totalInput - cached - cacheCreation
-        let longContext = rates.threshold.map { totalInput > $0 } ?? false
-        let inputRate = longContext ? rates.inputAboveThreshold ?? rates.input : rates.input
-        let cachedRate = longContext ? rates.cachedInputAboveThreshold ?? rates.cachedInput ?? inputRate : rates.cachedInput ?? rates.input
-        let creationRate = longContext ? rates.cacheCreationAboveThreshold ?? rates.cacheCreation ?? inputRate : rates.cacheCreation ?? rates.input
-        let outputRate = longContext ? rates.outputAboveThreshold ?? rates.output : rates.output
-        return Double(normal) * inputRate + Double(cached) * cachedRate + Double(cacheCreation) * creationRate + Double(tokens.output) * outputRate
+        let cachedRate = rates.cachedInput ?? rates.input
+        let creationRate = rates.cacheCreation ?? rates.input
+        return Double(normal) * rates.input
+            + Double(cached) * cachedRate
+            + Double(cacheCreation) * creationRate
+            + Double(tokens.output) * rates.output
     }
 
+    /// ccgauge `costFromUsage`: input + output + cacheCreation5m + cacheCreation1h + cacheRead.
+    /// 1h writes use 2× input (LiteLLM only publishes 5m write cost). No 200k tiers.
     private static func claudeCost(rates: Rates, tokens: UsageTokenBreakdown) -> Double {
-        let longContext = rates.threshold.map { tokens.input + tokens.cachedInput + tokens.cacheCreation > $0 } ?? false
-        let inputRate = longContext ? rates.inputAboveThreshold ?? rates.input : rates.input
-        let cachedRate = longContext ? rates.cachedInputAboveThreshold ?? rates.cachedInput ?? inputRate : rates.cachedInput ?? rates.input
-        let creationRate = longContext ? rates.cacheCreationAboveThreshold ?? rates.cacheCreation ?? inputRate : rates.cacheCreation ?? rates.input
+        let cachedRate = rates.cachedInput ?? rates.input
+        let creation5mRate = rates.cacheCreation ?? rates.input
+        let creation1hRate = rates.input * 2
         let creation1h = min(tokens.cacheCreation1h, tokens.cacheCreation)
-        return Double(tokens.input) * inputRate
+        let creation5m = tokens.cacheCreation - creation1h
+        return Double(tokens.input) * rates.input
+            + Double(tokens.output) * rates.output
+            + Double(creation5m) * creation5mRate
+            + Double(creation1h) * creation1hRate
             + Double(tokens.cachedInput) * cachedRate
-            + Double(tokens.cacheCreation - creation1h) * creationRate
-            + Double(creation1h) * inputRate * 2
-            + Double(tokens.output) * (longContext ? rates.outputAboveThreshold ?? rates.output : rates.output)
+    }
+
+    private static func resolveClaudeRates(_ rawModel: String) -> Rates? {
+        let model = normalizeClaudeModel(rawModel)
+        if let rates = claudeRates[model] { return rates }
+        // ccgauge FALLBACK_BY_FAMILY
+        for family in ["fable", "opus", "sonnet", "haiku"] where model.contains(family) {
+            let fallbackKey: String
+            switch family {
+            case "fable": fallbackKey = "claude-fable-5"
+            case "opus": fallbackKey = "claude-opus-4-8"
+            case "sonnet": fallbackKey = "claude-sonnet-4-6"
+            default: fallbackKey = "claude-haiku-4-5"
+            }
+            if let rates = claudeRates[fallbackKey] { return rates }
+        }
+        return nil
+    }
+
+    private static func resolveCodexRates(_ rawModel: String) -> Rates? {
+        let model = normalizeCodexModel(rawModel)
+        if let rates = codexRates[model] { return rates }
+        // ccgauge FALLBACK_FAMILY_OPENAI → gpt-5.5 / o3
+        if model.hasPrefix("gpt-") || model == "gpt" {
+            return codexRates["gpt-5.5"]
+        }
+        if model.range(of: #"^o\d"#, options: .regularExpression) != nil {
+            return nil // o-series not in our Codex table; leave unpriced
+        }
+        return nil
     }
 
     private static func normalizeCodexModel(_ model: String) -> String {
@@ -1133,7 +1158,7 @@ private extension String {
 public enum LocalUsageSource {
     /// Bump when Claude/Codex JSONL → ledger mapping changes so receipts
     /// invalidate and UsageCoordinator can rebuild provider rows cleanly.
-    public static let historicalParserRevision = "historical-sessions-v3+claude-stream-dedup"
+    public static let historicalParserRevision = "historical-sessions-v4+ccgauge-cost"
 
     public static func codexRecords(root: URL, now: Date = .now) -> [AgentUsageRecord] {
         codexScan(root: root, now: now).records
@@ -1296,9 +1321,8 @@ public enum LocalUsageSource {
         var lastActivityAt = fallbackDate
         var sawEvent = false
         // Claude Code streams multiple assistant JSONL rows per API response that
-        // share message.id + requestId while output_tokens grow. CodexBar / fixed
-        // ccusage keep the final row (last-wins). Keying on uuid over-bills input
-        // by the chunk count. ccgauge's earliest-wins under-counts output.
+        // share message.id + requestId. ccgauge keeps the earliest row for usage/cost
+        // (`dedupAssistantRecords` earliest-wins). Keying on uuid over-bills input.
         var keyedRecords: [String: AgentUsageRecord] = [:]
         var unkeyedRecords: [AgentUsageRecord] = []
 
@@ -1361,7 +1385,14 @@ public enum LocalUsageSource {
                 cost: BundledPricing.cost(model: recordModel, tokens: tokens, occurredAt: occurredAt)
             )
             if let dedupeKey {
-                keyedRecords[dedupeKey] = record
+                // ccgauge earliest-wins: keep the first/earliest timestamp for cost.
+                if let existing = keyedRecords[dedupeKey] {
+                    if record.occurredAt < existing.occurredAt {
+                        keyedRecords[dedupeKey] = record
+                    }
+                } else {
+                    keyedRecords[dedupeKey] = record
+                }
             } else {
                 unkeyedRecords.append(record)
             }

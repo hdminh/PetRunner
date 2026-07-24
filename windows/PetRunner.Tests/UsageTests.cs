@@ -60,7 +60,7 @@ internal static class UsageTests
         Check.Equal(1, records.Length);
         Check.Equal(1000L, records[0].Tokens.Input);
         Check.Equal(200L, records[0].Tokens.CachedInput);
-        Check.Equal(200L, records[0].Tokens.Output);
+        Check.Equal(5L, records[0].Tokens.Output); // ccgauge earliest-wins
         Check.True(records[0].Id.Contains("msg_abc:req-1", StringComparison.Ordinal), "Stable message/request source key");
     }
 
