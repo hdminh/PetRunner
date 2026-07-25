@@ -546,7 +546,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func configureDashboardServer() {
         guard dashboardServer == nil else { return }
-        let api = DashboardAPIController(
+        let deps = DashboardAPIDependencies(
             historyStore: { [weak self] in self?.historyStore },
             historyError: { [weak self] in self?.historyError },
             usageState: { [weak self] in self?.usageSnapshot },
@@ -681,6 +681,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.refreshMonitorPresentation()
             }
         )
+        let api = DashboardAPIController(deps: deps)
         dashboardAPI = api
         let resources = Bundle.main.resourceURL?.appendingPathComponent("DashboardWeb", isDirectory: true)
         let development = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)

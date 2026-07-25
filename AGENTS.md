@@ -106,10 +106,12 @@ ignored. The top-level `bin/` directory is npm CLI source and is committed.
   updates only, behind explicit user intent or documented refresh paths. Prefer
   keeping live HTTP and OS credential access in the app/host layer; keep Core
   focused on parsers, resolvers, and contracts.
-- Prefer splitting dashboard handlers and large usage modules by resource
-  (pets / usage / monitor / settings) rather than growing god objects. Full
-  Usage / Dashboard API carve is tracked as follow-up work; do not expand those
-  files without extracting when practical.
+- Dashboard and Usage are split by resource: Core usage modules
+  (`UsageModels`, `UsageAggregators`, `UsageBudgets`, `BundledPricing`,
+  `UsageStore`, `LocalUsageSource`) and host handlers
+  (`DashboardPetsHandler`, `DashboardUsageHandler`, `DashboardMonitorHandler`,
+  `DashboardSettingsHandler`) behind `DashboardAPIDependencies`. Prefer
+  extending those files over growing a single god object again.
 
 ## npm CLI and release rules
 
