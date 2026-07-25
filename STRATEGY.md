@@ -1,6 +1,6 @@
 ---
 name: PetRunner
-last_updated: 2026-07-15
+last_updated: 2026-07-26
 ---
 
 # PetRunner Strategy
@@ -11,11 +11,23 @@ A developer's desktop can feel sterile while they work with coding agents; they 
 
 ## Our approach
 
-PetRunner is first a fun desktop pet that reacts to session state and feels alive. Monitoring remains a minimal ambient signal rather than a developer dashboard; any cost or token information belongs, at most, after a session finishes.
+PetRunner is first a fun desktop pet that reacts to session state and feels alive. Monitoring remains a minimal ambient signal rather than a developer dashboard.
+
+Ambient usage signals (quota bars and local spend) are allowed when they stay
+glanceable under the pet and never require leaving the desktop flow. Detailed
+cost, history, and budgets belong in the local loopback dashboard, not in the
+overlay.
+
+The product stays local-first: no cloud sync backend by default. Opt-in
+outbound network is limited to provider plan-quota and pricing-catalog refresh.
 
 ## Who it's for
 
-**Primary:** Developers using Codex, Claude, or Cursor on their personal Macs — they hire PetRunner to make their desktop feel more alive and to notice when an agent needs input at a glance.
+**Primary:** Developers using Codex, Claude, or Cursor on their personal machines — they hire PetRunner to make their desktop feel more alive and to notice when an agent needs input at a glance.
+
+**Platform note (0.3.x):** Full Agent Monitor, Cursor usage, and remote plan
+quota ship on macOS first. Windows ships the parity core (pet + local Claude/Codex
+spend dashboard + budget quota bar). See `AGENTS.md` for the capability matrix.
 
 ## Key metrics
 
@@ -33,9 +45,19 @@ _Why it serves the approach:_ The pet itself is the primary reason people want t
 
 ### Agent-session monitoring
 
-Provide minimal ambient status for Codex, Claude, and Cursor sessions.
+Provide minimal ambient status for Codex, Claude, and Cursor sessions (macOS
+in 0.3.x). When Windows gains monitor support, share the normalized event
+protocol and session-history schema first.
 
 _Why it serves the approach:_ Useful status should enrich the pet without overtaking the pet experience.
+
+### Local usage and quota
+
+Show glanceable remaining-usage under the pet and deeper spend/budget detail in
+the local dashboard. Prefer budgets everywhere; remote plan windows are
+macOS-advanced until ported.
+
+_Why it serves the approach:_ Ambient metering reduces tab-checking without turning the pet into an analytics suite.
 
 ### Open-source distribution and community
 
