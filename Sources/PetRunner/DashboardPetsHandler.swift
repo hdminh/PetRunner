@@ -76,60 +76,6 @@ struct DashboardPetsHandler {
         return .json(object: ["ok": true])
     }
 
-    func updateBudgets(body: Data) -> DashboardHTTPResponse {
-        guard let object = DashboardAPIShared.jsonObject(body) else { return DashboardAPIShared.invalidJSON() }
-        let rawBudgets = object["budgets"] as? [String: Any] ?? object
-        var configurations = deps.budgetConfigurations()
-        for (key, rawValue) in rawBudgets {
-            guard let provider = UsageProvider(rawValue: key), let values = rawValue as? [String: Any] else { continue }
-            configurations[provider] = ProviderBudgetConfiguration(
-                dailyUSD: DashboardAPIShared.number(values["dailyUSD"]),
-                monthlyUSD: DashboardAPIShared.number(values["monthlyUSD"])
-            )
-        }
-        deps.onSetBudgetConfigurations(configurations)
-        return .json(object: ["ok": true])
-    }
-
-    func updateSettings(body: Data) -> DashboardHTTPResponse {
-        guard let object = DashboardAPIShared.jsonObject(body) else { return DashboardAPIShared.invalidJSON() }
-        if let showStatusItem = object["showStatusItem"] as? Bool {
-            deps.onSetStatusItemVisible(showStatusItem)
-        }
-        if let hidden = object["petHidden"] as? Bool {
-            deps.onSetPetHidden(hidden)
-        }
-        if let visible = object["quotaBarVisible"] as? Bool {
-            deps.onSetQuotaBarVisible(visible)
-        }
-        if let rawMode = object["quotaBarMode"] as? String, let mode = QuotaBarMode(rawValue: rawMode) {
-            deps.onSetQuotaBarMode(mode)
-        }
-        if let petsDirectory = object["petsDirectory"] as? String {
-            do {
-                try deps.onSetPetsDirectory(petsDirectory)
-            } catch {
-                return .error(
-                    status: 400,
-                    code: "invalid_pets_directory",
-                    message: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                )
-            }
-        }
-        if let rawBudgets = object["budgets"] as? [String: Any] {
-            var configurations = deps.budgetConfigurations()
-            for (key, rawValue) in rawBudgets {
-                guard let provider = UsageProvider(rawValue: key), let values = rawValue as? [String: Any] else { continue }
-                configurations[provider] = ProviderBudgetConfiguration(
-                    dailyUSD: DashboardAPIShared.number(values["dailyUSD"]),
-                    monthlyUSD: DashboardAPIShared.number(values["monthlyUSD"])
-                )
-            }
-            deps.onSetBudgetConfigurations(configurations)
-        }
-        return .json(object: ["ok": true])
-    }
-
     func removePet(path: String) -> DashboardHTTPResponse {
         let pieces = path.split(separator: "/", omittingEmptySubsequences: true)
         guard pieces.count == 2, pieces[0] == "pets" else { return DashboardAPIShared.notFound() }

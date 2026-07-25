@@ -13,10 +13,10 @@ todos:
     status: completed
   - id: u4-wire-verify
     content: "U4: AppDelegate wiring + swift test / dashboard:test"
-    status: in_progress
+    status: completed
   - id: u5-agents-docs
     content: "U5: Update AGENTS.md carve note to landed file map"
-    status: pending
+    status: completed
 isProject: false
 ---
 
