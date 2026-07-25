@@ -10,6 +10,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     var onOpenDashboard: (() -> Void)?
     var onToggleMonitor: (() -> Void)?
     var onConfigureMonitor: (() -> Void)?
+    var onRefreshMonitorBubble: (() -> Void)?
     var onRepairMonitor: (() -> Void)?
     var onToggleAutonomy: (() -> Void)?
     var onTogglePetHidden: (() -> Void)?
@@ -182,6 +183,13 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             let configure = NSMenuItem(title: "Configure Monitor…", action: #selector(configureMonitor), keyEquivalent: "")
             configure.target = self
             monitorMenu.addItem(configure)
+            let refreshBubble = NSMenuItem(
+                title: "Reset Monitor Bubble",
+                action: #selector(refreshMonitorBubble),
+                keyEquivalent: ""
+            )
+            refreshBubble.target = self
+            monitorMenu.addItem(refreshBubble)
             monitorMenu.addItem(.separator())
             let repair = NSMenuItem(title: "Repair Hook Configuration…", action: #selector(repairMonitor), keyEquivalent: "")
             repair.target = self
@@ -331,6 +339,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     @objc private func openDashboard() { onOpenDashboard?() }
     @objc private func toggleMonitor() { onToggleMonitor?() }
     @objc private func configureMonitor() { onConfigureMonitor?() }
+    @objc private func refreshMonitorBubble() { onRefreshMonitorBubble?() }
     @objc private func repairMonitor() { onRepairMonitor?() }
     @objc private func toggleAutonomy() { onToggleAutonomy?() }
     @objc private func togglePetHidden() { onTogglePetHidden?() }

@@ -22,6 +22,7 @@ final class QuickActionsMenuController: NSObject {
     var onImportPet: (() -> Void)?
     var onToggleAutonomy: (() -> Void)?
     var onToggleMonitor: (() -> Void)?
+    var onRefreshMonitorBubble: (() -> Void)?
     var onTogglePetHidden: (() -> Void)?
     var onToggleQuotaBarVisible: (() -> Void)?
     var onSetQuotaBarMode: ((QuotaBarMode) -> Void)?
@@ -60,6 +61,9 @@ final class QuickActionsMenuController: NSObject {
         let monitor = item("Agent Monitor", action: #selector(toggleMonitor))
         monitor.state = state.monitorEnabled ? .on : .off
         menu.addItem(monitor)
+        if state.monitorEnabled {
+            menu.addItem(item("Reset Monitor Bubble", action: #selector(refreshMonitorBubble)))
+        }
 
         let quotaMenu = NSMenu(title: "Quota Bar")
         let show = item(state.quotaBarVisible ? "Hide Quota Bar" : "Show Quota Bar", action: #selector(toggleQuotaBarVisible))
@@ -104,6 +108,7 @@ final class QuickActionsMenuController: NSObject {
     @objc private func importPet() { onImportPet?() }
     @objc private func toggleAutonomy() { onToggleAutonomy?() }
     @objc private func toggleMonitor() { onToggleMonitor?() }
+    @objc private func refreshMonitorBubble() { onRefreshMonitorBubble?() }
     @objc private func togglePetHidden() { onTogglePetHidden?() }
     @objc private func toggleQuotaBarVisible() { onToggleQuotaBarVisible?() }
     @objc private func selectQuotaBarMode(_ sender: NSMenuItem) {
