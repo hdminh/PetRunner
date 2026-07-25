@@ -189,4 +189,5 @@ export type PricingCatalogResponse = {
   count: number;
   refreshed?: boolean;
   refreshSource?: string;
+  refreshError?: string;
 };

@@ -134,10 +134,19 @@ struct UsageTests {
     }
 
     @Test func pricingCatalogListsClaudeAndCodexRatesPerMillion() {
+        PricingCatalogStore.shared.resetForTesting()
         let all = BundledPricing.catalog()
+        #expect(all.contains { $0.id == "claude-sonnet-5" && $0.provider == .claude })
+        #expect(all.contains { $0.id == "claude-opus-5" && $0.provider == .claude })
         #expect(all.contains { $0.id == "claude-sonnet-4-5" && $0.provider == .claude })
         #expect(all.contains { $0.id == "gpt-5-codex" && $0.provider == .codex })
         #expect(!all.contains { $0.provider == .cursor })
+
+        let sonnet5 = all.first { $0.id == "claude-sonnet-5" }
+        #expect(sonnet5?.inputPerMillionUSD == 2)
+        #expect(sonnet5?.outputPerMillionUSD == 10)
+        #expect(sonnet5?.cacheReadPerMillionUSD == 0.2)
+        #expect(sonnet5?.cacheWritePerMillionUSD == 2.5)
 
         let sonnet = all.first { $0.id == "claude-sonnet-4-5" }
         #expect(sonnet?.inputPerMillionUSD == 3)
@@ -155,6 +164,7 @@ struct UsageTests {
     }
 
     @Test func pricingSeparatesClaudeCacheCreationAndNormalizesAliases() {
+        PricingCatalogStore.shared.resetForTesting()
         let tokens = UsageTokenBreakdown(input: 100, cachedInput: 20, cacheCreation: 10, output: 5)
         let direct = BundledPricing.cost(model: "claude-sonnet-4-5", tokens: tokens)
         let vertexAlias = BundledPricing.cost(model: "anthropic.claude-sonnet-4-5-v1:0", tokens: tokens)
@@ -162,7 +172,7 @@ struct UsageTests {
         #expect(approximatelyEqual(direct.usd, 0.0004185))
         #expect(vertexAlias == direct)
         #expect(direct.pricingVersion == BundledPricing.version)
-        #expect(BundledPricing.version.contains("ccgauge"))
+        #expect(BundledPricing.version.contains("2026-07-25-models"))
     }
 
     @Test func codexPricingDoesNotDoubleBillCachedInputAndRecognizesDatedAlias() {
@@ -203,15 +213,38 @@ struct UsageTests {
     }
 
     @Test func ccgaugeStyleCostIgnoresLongContextSurchargeAndFallsBackByFamily() {
+        PricingCatalogStore.shared.resetForTesting()
         let tokens = UsageTokenBreakdown(input: 200_001)
         let beforeChange = Date(timeIntervalSince1970: 1_700_000_000)
         let afterChange = Date(timeIntervalSince1970: 1_800_000_000)
 
         #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-4-6", tokens: tokens, occurredAt: beforeChange).usd, 0.600003))
         #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-4-6", tokens: tokens, occurredAt: afterChange).usd, 0.600003))
-        // Unknown sonnet-shaped id → family fallback (claude-sonnet-4-6 rates).
-        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-9-9-experimental", tokens: .init(input: 1_000_000)).usd, 3.0))
+        // Unknown sonnet-shaped id → family fallback (claude-sonnet-5 intro rates).
+        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-9-9-experimental", tokens: .init(input: 1_000_000), occurredAt: Date(timeIntervalSince1970: 1_753_228_800)).usd, 2.0))
         #expect(BundledPricing.cost(model: "totally-unknown-widget", tokens: tokens).usd == nil)
+    }
+
+    @Test func sonnet5UsesIntroThenStandardRatesAndRemoteOverlayAddsModels() throws {
+        PricingCatalogStore.shared.resetForTesting()
+        let million = UsageTokenBreakdown(input: 1_000_000)
+        let intro = Date(timeIntervalSince1970: 1_753_228_800) // 2025-07-23 — before Sep 2026
+        let standard = Date(timeIntervalSince1970: 1_788_220_800) // 2026-09-01 UTC
+
+        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-5", tokens: million, occurredAt: intro).usd, 2.0))
+        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-5", tokens: million, occurredAt: standard).usd, 3.0))
+        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-opus-5", tokens: million).usd, 5.0))
+
+        let modelsDev = """
+        {"anthropic":{"models":{"claude-sonnet-5":{"cost":{"input":2,"output":10,"cache_read":0.2,"cache_write":2.5}},"claude-haiku-5":{"cost":{"input":0.8,"output":4,"cache_read":0.08,"cache_write":1}}}},"openai":{"models":{"gpt-5.7-codex":{"cost":{"input":2,"output":12,"cache_read":0.2}}}}}
+        """.data(using: .utf8)!
+        let result = try PricingCatalogStore.shared.applyRemotePayloads(modelsDev: modelsDev)
+        #expect(result.claudeCount >= 2)
+        #expect(BundledPricing.catalog().contains { $0.id == "claude-haiku-5" && $0.inputPerMillionUSD == 0.8 })
+        #expect(BundledPricing.catalog().contains { $0.id == "gpt-5.7-codex" && $0.outputPerMillionUSD == 12 })
+        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-haiku-5", tokens: million).usd, 0.8))
+        #expect(BundledPricing.version.contains("remote"))
+        PricingCatalogStore.shared.resetForTesting()
     }
 
     @Test func storeRoundTripsCacheCreationCategories() throws {

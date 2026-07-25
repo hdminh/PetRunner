@@ -52,19 +52,32 @@ public sealed record UsageFilter(string Range = "30d", UsageProvider? Provider =
 
 public static class UsagePricing
 {
-    public const string Version = "2026-07-01";
+    public const string Version = "2026-07-25-models";
 
     public static UsageCost Cost(string? model, UsageTokens tokens)
     {
         if (string.IsNullOrWhiteSpace(model)) return new(null, UsageCostProvenance.Unavailable);
         var normalized = model.ToLowerInvariant();
-        (double Input, double Cached, double Output)? rates = normalized.Contains("claude", StringComparison.Ordinal)
-            ? normalized.Contains("opus", StringComparison.Ordinal) ? (15, 1.5, 75)
-            : normalized.Contains("haiku", StringComparison.Ordinal) ? (0.8, 0.08, 4)
-            : (3, 0.3, 15)
-            : normalized.Contains("gpt", StringComparison.Ordinal) || normalized.Contains("o3", StringComparison.Ordinal) || normalized.Contains("codex", StringComparison.Ordinal)
-                ? normalized.Contains("mini", StringComparison.Ordinal) ? (1.1, 0.11, 4.4) : (2.5, 0.25, 10)
-                : null;
+        (double Input, double Cached, double Output)? rates = null;
+        if (normalized.Contains("claude", StringComparison.Ordinal))
+        {
+            if (normalized.Contains("opus", StringComparison.Ordinal))
+                rates = (5, 0.5, 25); // opus-5 / 4.5+ family
+            else if (normalized.Contains("haiku", StringComparison.Ordinal))
+                rates = (1, 0.1, 5);
+            else if (normalized.Contains("fable", StringComparison.Ordinal) || normalized.Contains("mythos", StringComparison.Ordinal))
+                rates = (10, 1, 50);
+            else if (normalized.Contains("sonnet-5", StringComparison.Ordinal) || normalized.Contains("sonnet_5", StringComparison.Ordinal))
+                rates = (2, 0.2, 10); // Sonnet 5 intro pricing (models.dev / Anthropic through 2026-08-31)
+            else
+                rates = (3, 0.3, 15); // sonnet-4.x
+        }
+        else if (normalized.Contains("gpt", StringComparison.Ordinal) || normalized.Contains("o3", StringComparison.Ordinal) || normalized.Contains("codex", StringComparison.Ordinal))
+        {
+            rates = normalized.Contains("mini", StringComparison.Ordinal) || normalized.Contains("nano", StringComparison.Ordinal)
+                ? (0.25, 0.025, 2)
+                : (5, 0.5, 30); // gpt-5.5-class fallback
+        }
         if (rates is not { } price) return new(null, UsageCostProvenance.Unavailable);
         var usd = (tokens.Input * price.Input + tokens.CachedInput * price.Cached + tokens.Output * price.Output) / 1_000_000d;
         return new(usd, UsageCostProvenance.Calculated, Version);

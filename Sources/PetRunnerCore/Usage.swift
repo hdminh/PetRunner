@@ -598,9 +598,14 @@ public enum BudgetPolicy {
 }
 
 public enum BundledPricing {
-    /// API-equivalent USD/token rates aligned with ccgauge's LiteLLM snapshot
-    /// + `costFromUsage` (no long-context surcharge tiers). Versioned for ledger rebuilds.
-    public static let version = "2026-07-24-ccgauge"
+    /// Offline baseline aligned with models.dev / LiteLLM (no long-context
+    /// surcharge tiers, matching ccgauge `costFromUsage`). Remote refresh via
+    /// `PricingCatalogStore` layers newer model ids + rates on top.
+    public static let bundledVersion = "2026-07-25-models"
+
+    /// Active catalog version (bundled, or bundled + remote overlay stamp).
+    /// Included in historical parser receipts so pricing refreshes rebuild costs.
+    public static var version: String { PricingCatalogStore.shared.effectiveVersion }
 
     public struct ResolvedRates: Equatable, Sendable {
         public let input: Double
@@ -626,7 +631,7 @@ public enum BundledPricing {
         public let cacheWriteAboveThresholdPerMillionUSD: Double?
     }
 
-    private struct Rates {
+    fileprivate struct Rates {
         let input: Double
         let cachedInput: Double?
         let cacheCreation: Double?
@@ -637,6 +642,9 @@ public enum BundledPricing {
         let cacheCreationAboveThreshold: Double?
         let outputAboveThreshold: Double?
     }
+
+    /// Anthropic Sonnet 5 intro pricing ends 2026-08-31; standard $3/$15 from 2026-09-01 UTC.
+    fileprivate static let sonnet5StandardRatesStart = Date(timeIntervalSince1970: 1_788_220_800)
 
     private static let codexRates: [String: Rates] = [
         "gpt-5": .init(input: 1.25e-6, cachedInput: 1.25e-7, cacheCreation: nil, output: 1e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
@@ -672,24 +680,27 @@ public enum BundledPricing {
         "claude-opus-4-6": .init(input: 5e-6, cachedInput: 5e-7, cacheCreation: 6.25e-6, output: 2.5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
         "claude-opus-4-7": .init(input: 5e-6, cachedInput: 5e-7, cacheCreation: 6.25e-6, output: 2.5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
         "claude-opus-4-8": .init(input: 5e-6, cachedInput: 5e-7, cacheCreation: 6.25e-6, output: 2.5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
+        "claude-opus-5": .init(input: 5e-6, cachedInput: 5e-7, cacheCreation: 6.25e-6, output: 2.5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
+        // Intro $2/$10 through 2026-08-31; `sonnet5Rates(at:)` upgrades to $3/$15 afterwards.
+        "claude-sonnet-5": .init(input: 2e-6, cachedInput: 2e-7, cacheCreation: 2.5e-6, output: 1e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
         "claude-sonnet-4": .init(input: 3e-6, cachedInput: 3e-7, cacheCreation: 3.75e-6, output: 1.5e-5, threshold: 200_000, inputAboveThreshold: 6e-6, cachedInputAboveThreshold: 6e-7, cacheCreationAboveThreshold: 7.5e-6, outputAboveThreshold: 2.25e-5),
         "claude-sonnet-4-5": .init(input: 3e-6, cachedInput: 3e-7, cacheCreation: 3.75e-6, output: 1.5e-5, threshold: 200_000, inputAboveThreshold: 6e-6, cachedInputAboveThreshold: 6e-7, cacheCreationAboveThreshold: 7.5e-6, outputAboveThreshold: 2.25e-5),
         "claude-sonnet-4-6": .init(input: 3e-6, cachedInput: 3e-7, cacheCreation: 3.75e-6, output: 1.5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
     ]
 
-    // Long-context / date-gated surcharge tables intentionally omitted to match
-    // ccgauge (LiteLLM snapshot drops `*_above_200k` tiers).
+    // Long-context surcharge tables intentionally omitted to match ccgauge
+    // (LiteLLM snapshot drops `*_above_200k` tiers). Remote refresh may still
+    // list base rates for models that appear after this bundle ships.
 
     /// API-equivalent calculated cost matching ccgauge `costFromUsage`.
-    /// Unknown Claude/Codex models fall back to the latest family rates
-    /// (ccgauge `FALLBACK_BY_FAMILY` / `FALLBACK_FAMILY_OPENAI`); otherwise unpriced.
+    /// Unknown Claude/Codex models fall back to the latest family rates;
+    /// otherwise unpriced. Remote overlay rates win over the offline bundle.
     public static func cost(model: String?, tokens: UsageTokenBreakdown, occurredAt: Date? = nil) -> UsageCost {
-        // occurredAt retained for call-site compatibility; ccgauge does not date-gate rates.
-        _ = occurredAt
+        let at = occurredAt ?? .now
         guard let rawModel = model?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), !rawModel.isEmpty else {
             return UsageCost(usd: nil, provenance: .unavailable)
         }
-        if let rates = resolveClaudeRates(rawModel) {
+        if let rates = resolveClaudeRates(rawModel, at: at) {
             return calculated(claudeCost(rates: rates, tokens: tokens), version: version)
         }
         if let rates = resolveCodexRates(rawModel) {
@@ -704,7 +715,7 @@ public enum BundledPricing {
         guard let rawModel = model?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), !rawModel.isEmpty else {
             return nil
         }
-        guard let rates = resolveClaudeRates(rawModel) ?? resolveCodexRates(rawModel) else { return nil }
+        guard let rates = resolveClaudeRates(rawModel, at: .now) ?? resolveCodexRates(rawModel) else { return nil }
         return ResolvedRates(input: rates.input, cachedInput: rates.cachedInput, cacheCreation: rates.cacheCreation, output: rates.output)
     }
 
@@ -742,13 +753,24 @@ public enum BundledPricing {
     public static func catalog(provider: UsageProvider? = nil) -> [CatalogEntry] {
         var entries: [CatalogEntry] = []
         if provider == nil || provider == .claude {
-            entries.append(contentsOf: claudeRates.keys.sorted().map { catalogEntry(id: $0, provider: .claude, rates: claudeRates[$0]!) })
+            let ids = Set(claudeRates.keys).union(PricingCatalogStore.shared.overlayClaudeModels())
+            entries.append(contentsOf: ids.sorted().compactMap { id in
+                guard let rates = resolveClaudeRates(id, at: .now) else { return nil }
+                return catalogEntry(id: id, provider: .claude, rates: rates)
+            })
         }
         if provider == nil || provider == .codex {
-            entries.append(contentsOf: codexRates.keys.sorted().map { catalogEntry(id: $0, provider: .codex, rates: codexRates[$0]!) })
+            let ids = Set(codexRates.keys).union(PricingCatalogStore.shared.overlayCodexModels())
+            entries.append(contentsOf: ids.sorted().compactMap { id in
+                guard let rates = resolveCodexRates(id) else { return nil }
+                return catalogEntry(id: id, provider: .codex, rates: rates)
+            })
         }
         return entries
     }
+
+    public static var catalogSource: String { PricingCatalogStore.shared.sourceLabel }
+    public static var catalogLabel: String { PricingCatalogStore.shared.catalogLabel }
 
     private static func catalogEntry(id: String, provider: UsageProvider, rates: Rates) -> CatalogEntry {
         CatalogEntry(
@@ -801,34 +823,75 @@ public enum BundledPricing {
             + Double(tokens.cachedInput) * cachedRate
     }
 
-    private static func resolveClaudeRates(_ rawModel: String) -> Rates? {
+    private static func resolveClaudeRates(_ rawModel: String, at date: Date) -> Rates? {
         let model = normalizeClaudeModel(rawModel)
+        if let overlay = PricingCatalogStore.shared.claudeOverlay(for: model) {
+            return rates(from: overlay)
+        }
+        if isSonnet5Family(model) {
+            return sonnet5Rates(at: date)
+        }
         if let rates = claudeRates[model] { return rates }
-        // ccgauge FALLBACK_BY_FAMILY
+        // Latest family fallback (prefer Sonnet 5 / Opus 5 when present).
         for family in ["fable", "opus", "sonnet", "haiku"] where model.contains(family) {
             let fallbackKey: String
             switch family {
             case "fable": fallbackKey = "claude-fable-5"
-            case "opus": fallbackKey = "claude-opus-4-8"
-            case "sonnet": fallbackKey = "claude-sonnet-4-6"
+            case "opus": fallbackKey = "claude-opus-5"
+            case "sonnet": fallbackKey = "claude-sonnet-5"
             default: fallbackKey = "claude-haiku-4-5"
+            }
+            if fallbackKey == "claude-sonnet-5" {
+                return sonnet5Rates(at: date)
             }
             if let rates = claudeRates[fallbackKey] { return rates }
         }
         return nil
     }
 
+    private static func isSonnet5Family(_ model: String) -> Bool {
+        model == "claude-sonnet-5" || model.hasPrefix("claude-sonnet-5-")
+    }
+
+    private static func sonnet5Rates(at date: Date) -> Rates {
+        if date >= sonnet5StandardRatesStart {
+            return .init(
+                input: 3e-6, cachedInput: 3e-7, cacheCreation: 3.75e-6, output: 1.5e-5,
+                threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil,
+                cacheCreationAboveThreshold: nil, outputAboveThreshold: nil
+            )
+        }
+        return claudeRates["claude-sonnet-5"]!
+    }
+
     private static func resolveCodexRates(_ rawModel: String) -> Rates? {
         let model = normalizeCodexModel(rawModel)
+        if let overlay = PricingCatalogStore.shared.codexOverlay(for: model) {
+            return rates(from: overlay)
+        }
         if let rates = codexRates[model] { return rates }
-        // ccgauge FALLBACK_FAMILY_OPENAI → gpt-5.5 / o3
         if model.hasPrefix("gpt-") || model == "gpt" {
-            return codexRates["gpt-5.5"]
+            return PricingCatalogStore.shared.codexOverlay(for: "gpt-5.5").map(rates(from:))
+                ?? codexRates["gpt-5.5"]
         }
         if model.range(of: #"^o\d"#, options: .regularExpression) != nil {
-            return nil // o-series not in our Codex table; leave unpriced
+            return nil
         }
         return nil
+    }
+
+    private static func rates(from overlay: PricingCatalogStore.OverlayRates) -> Rates {
+        Rates(
+            input: overlay.inputPerMillion / 1_000_000,
+            cachedInput: overlay.cacheReadPerMillion.map { $0 / 1_000_000 },
+            cacheCreation: overlay.cacheWritePerMillion.map { $0 / 1_000_000 },
+            output: overlay.outputPerMillion / 1_000_000,
+            threshold: nil,
+            inputAboveThreshold: nil,
+            cachedInputAboveThreshold: nil,
+            cacheCreationAboveThreshold: nil,
+            outputAboveThreshold: nil
+        )
     }
 
     private static func normalizeCodexModel(_ model: String) -> String {
@@ -836,7 +899,7 @@ public enum BundledPricing {
         if model == "gpt-5.6" { return "gpt-5.6-sol" }
         if let dateRange = model.range(of: #"-\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) {
             let base = String(model[..<dateRange.lowerBound])
-            if codexRates[base] != nil { model = base }
+            if codexRates[base] != nil || PricingCatalogStore.shared.codexOverlay(for: base) != nil { model = base }
         }
         return model
     }
@@ -850,7 +913,9 @@ public enum BundledPricing {
         if let versionRange = model.range(of: #"-v\d+:\d+$"#, options: .regularExpression) { model.removeSubrange(versionRange) }
         if let dateRange = model.range(of: #"-\d{8}$"#, options: .regularExpression) {
             let base = String(model[..<dateRange.lowerBound])
-            if claudeRates[base] != nil { model = base }
+            if claudeRates[base] != nil || PricingCatalogStore.shared.claudeOverlay(for: base) != nil || isSonnet5Family(base) {
+                model = base
+            }
         }
         return model
     }
@@ -1133,7 +1198,11 @@ private extension String {
 public enum LocalUsageSource {
     /// Bump when Claude/Codex JSONL → ledger mapping changes so receipts
     /// invalidate and UsageCoordinator can rebuild provider rows cleanly.
-    public static let historicalParserRevision = "historical-sessions-v4+ccgauge-cost"
+    /// Includes the active pricing catalog version so remote rate refreshes
+    /// also force a cost rebuild on the next usage scan.
+    public static var historicalParserRevision: String {
+        "historical-sessions-v4+\(BundledPricing.version)"
+    }
 
     public static func codexRecords(root: URL, now: Date = .now) -> [AgentUsageRecord] {
         codexScan(root: root, now: now).records
