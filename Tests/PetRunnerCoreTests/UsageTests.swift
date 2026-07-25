@@ -247,6 +247,24 @@ struct UsageTests {
         PricingCatalogStore.shared.resetForTesting()
     }
 
+    @Test func refreshSyncDetachedFetchSurfacesTransportFailure() {
+        // Exercises the Task.detached + FetchGate bridge (Swift 6 Sendable).
+        // Port 1 is unusable on macOS, so the wait returns a transport/timeout error.
+        let store = PricingCatalogStore(
+            fileURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("petrunner-pricing-\(UUID().uuidString).json"),
+            modelsDevURL: URL(string: "http://127.0.0.1:1/models.json")!,
+            litellmURL: URL(string: "http://127.0.0.1:1/litellm.json")!
+        )
+        var threw = false
+        do {
+            _ = try store.refreshSync(timeout: 3)
+        } catch {
+            threw = true
+        }
+        #expect(threw)
+    }
+
     @Test func storeRoundTripsCacheCreationCategories() throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

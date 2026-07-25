@@ -139,27 +139,47 @@ public final class PricingCatalogStore: @unchecked Sendable {
     public func refreshSync(timeout: TimeInterval = 20) throws -> RefreshResult {
         let modelsURL = modelsDevEndpoint
         let litellmURL = litellmEndpoint
-        let semaphore = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var fetchOutcome: Result<(Data, Data?), Error>?
+        // Box keeps the detached task `@Sendable`: capturing a mutable local
+        // `Result` (even via `nonisolated(unsafe)`) trips SendingRisksDataRace.
+        let gate = FetchGate()
         Task.detached {
             do {
                 let session = URLSession(configuration: .ephemeral)
                 let modelsData = try await Self.fetchData(from: modelsURL, session: session)
                 let litellmData = try? await Self.fetchData(from: litellmURL, session: session)
-                fetchOutcome = .success((modelsData, litellmData))
+                gate.complete(.success((modelsData, litellmData)))
             } catch {
-                fetchOutcome = .failure(error)
+                gate.complete(.failure(error))
             }
-            semaphore.signal()
         }
-        _ = semaphore.wait(timeout: .now() + timeout)
-        switch fetchOutcome {
+        switch gate.wait(timeout: timeout) {
         case .success(let (modelsData, litellmData)):
             return try applyRemotePayloads(modelsDev: modelsData, litellm: litellmData)
         case .failure(let error):
             throw error
         case nil:
             throw RefreshError.transport("Pricing refresh timed out.")
+        }
+    }
+
+    /// Thread-safe rendezvous for `refreshSync`'s detached fetch.
+    private final class FetchGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private let semaphore = DispatchSemaphore(value: 0)
+        private var outcome: Result<(Data, Data?), Error>?
+
+        func complete(_ result: Result<(Data, Data?), Error>) {
+            lock.lock()
+            outcome = result
+            lock.unlock()
+            semaphore.signal()
+        }
+
+        func wait(timeout: TimeInterval) -> Result<(Data, Data?), Error>? {
+            _ = semaphore.wait(timeout: .now() + timeout)
+            lock.lock()
+            defer { lock.unlock() }
+            return outcome
         }
     }
 
