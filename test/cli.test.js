@@ -38,6 +38,22 @@ test("bin entrypoint reports the package version", () => {
   assert.equal(output.trim(), packageVersion);
 });
 
+test("bin entrypoint accepts -v and help aliases", () => {
+  const packageVersion = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+  assert.equal(
+    execFileSync(process.execPath, ["bin/pet-runner.js", "-v"], { encoding: "utf8" }).trim(),
+    packageVersion,
+  );
+  assert.equal(
+    execFileSync(process.execPath, ["bin/pet-runner.js", "version"], { encoding: "utf8" }).trim(),
+    packageVersion,
+  );
+  const help = execFileSync(process.execPath, ["bin/pet-runner.js", "--help"], { encoding: "utf8" });
+  assert.match(help, /Commands/);
+  assert.match(help, /--version/);
+  assert.match(help, /setup/);
+});
+
 test("npm package allow-list includes the dashboard", () => {
   const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   assert.equal(packageJson.files.includes("DashboardWeb/"), true);
