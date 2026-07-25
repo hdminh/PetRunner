@@ -15,12 +15,23 @@ import {
 } from "../lib/setup.js";
 import { parseArguments } from "../lib/cli.js";
 
-test("interactive setup runs on TTY unless skipped", () => {
-  assert.equal(shouldRunInteractiveSetup({ isTTY: true }), true);
-  assert.equal(shouldRunInteractiveSetup({ isTTY: true, yes: true }), false);
-  assert.equal(shouldRunInteractiveSetup({ isTTY: true, noSetup: true }), false);
-  assert.equal(shouldRunInteractiveSetup({ isTTY: false }), false);
-  assert.equal(shouldRunInteractiveSetup({ isTTY: false, forceSetup: true }), true);
+test("interactive setup runs on TTY unless skipped or already configured", () => {
+  assert.equal(shouldRunInteractiveSetup({ isTTY: true, setupExists: false }), true);
+  assert.equal(shouldRunInteractiveSetup({ isTTY: true, setupExists: true }), false);
+  assert.equal(shouldRunInteractiveSetup({ isTTY: true, yes: true, setupExists: false }), false);
+  assert.equal(shouldRunInteractiveSetup({ isTTY: true, noSetup: true, setupExists: false }), false);
+  assert.equal(shouldRunInteractiveSetup({ isTTY: false, setupExists: false }), false);
+  assert.equal(shouldRunInteractiveSetup({ isTTY: false, forceSetup: true, setupExists: true }), true);
+  assert.equal(shouldRunInteractiveSetup({ isTTY: true, forceSetup: true, setupExists: true }), true);
+});
+
+test("parses help and version flags", () => {
+  assert.equal(parseArguments(["--help"]).command, "help");
+  assert.equal(parseArguments(["-h"]).command, "help");
+  assert.equal(parseArguments(["help"]).command, "help");
+  assert.equal(parseArguments(["--version"]).command, "version");
+  assert.equal(parseArguments(["-v"]).command, "version");
+  assert.equal(parseArguments(["version"]).command, "version");
 });
 
 test("parses setup skip and force flags", () => {
