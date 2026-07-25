@@ -5,10 +5,13 @@ import PetRunnerCore
 @MainActor
 final class PetQuotaBarView: NSView {
     private var segments: [QuotaBarSegment] = []
+    private var isCollapsed = false
 
-    static let barHeight: CGFloat = 12
-    static let barSpacing: CGFloat = 3
-    static let sideInset: CGFloat = 4
+    static let barHeight = QuotaBarLayout.barHeight
+    static let barSpacing = QuotaBarLayout.barSpacing
+    static let sideInset = QuotaBarLayout.sideInset
+    static let controlSize = QuotaBarLayout.controlSize
+    static let collapsedHeight = QuotaBarLayout.collapsedHeight
 
     override var isFlipped: Bool { false }
     override var isOpaque: Bool { false }
@@ -23,7 +26,7 @@ final class PetQuotaBarView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    /// Bars ignore mouse so drag/resize stay on the sprite.
+    /// Bars ignore mouse so drag/resize stay on the sprite; the toggle button handles hits.
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     func setSegments(_ segments: [QuotaBarSegment]) {
@@ -31,9 +34,32 @@ final class PetQuotaBarView: NSView {
         needsDisplay = true
     }
 
-    static func preferredHeight(forCount count: Int) -> CGFloat {
-        guard count > 0 else { return 0 }
-        return CGFloat(count) * barHeight + CGFloat(count - 1) * barSpacing + 4
+    func setCollapsed(_ collapsed: Bool) {
+        guard isCollapsed != collapsed else { return }
+        isCollapsed = collapsed
+        needsDisplay = true
+    }
+
+    static func barsHeight(forCount count: Int) -> CGFloat {
+        QuotaBarLayout.barsHeight(forCount: count)
+    }
+
+    static func preferredHeight(forCount count: Int, collapsed: Bool = false) -> CGFloat {
+        QuotaBarLayout.preferredHeight(forCount: count, collapsed: collapsed)
+    }
+
+    static func toggleFrame(
+        containerWidth: CGFloat,
+        segmentCount: Int,
+        collapsed: Bool,
+        scale: CGFloat
+    ) -> CGRect {
+        QuotaBarLayout.toggleFrame(
+            containerWidth: containerWidth,
+            segmentCount: segmentCount,
+            collapsed: collapsed,
+            scale: scale
+        )
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -53,8 +79,13 @@ final class PetQuotaBarView: NSView {
             }
         }
 
-        let scale = max(1, floor(window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2))
-        let unit = max(1, floor(2 * scale) / scale) // ~2pt pixel unit
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        let unit = QuotaBarLayout.pixelUnit(scale: scale)
+
+        if isCollapsed {
+            drawCollapsedHearts(unit: unit)
+            return
+        }
 
         var y = bounds.minY + 2
         for segment in segments.reversed() {
@@ -63,12 +94,35 @@ final class PetQuotaBarView: NSView {
         }
     }
 
+    private func drawCollapsedHearts(unit: CGFloat) {
+        let item = QuotaBarLayout.controlSize
+        let gap = QuotaBarLayout.collapsedItemGap
+        let total = CGFloat(segments.count + 1) * item + CGFloat(segments.count) * gap
+        // Skip the leading expand-control slot (drawn by QuotaBarCollapseButton).
+        var x = max(Self.sideInset, (bounds.width - total) / 2) + item + gap
+        let y = (Self.collapsedHeight - item) / 2
+        for segment in segments {
+            let heartSize = CGSize(width: unit * 7, height: unit * 6)
+            let heartOrigin = CGPoint(
+                x: x + (item - heartSize.width) / 2,
+                y: y + (item - heartSize.height) / 2
+            )
+            drawHeart(at: heartOrigin, unit: unit, remainingPercent: segment.remainingPercent)
+            x += item + gap
+        }
+    }
+
     private func drawBar(segment: QuotaBarSegment, originY: CGFloat, unit: CGFloat) {
         let heartSize = CGSize(width: unit * 7, height: unit * 6)
-        let heartOrigin = CGPoint(x: Self.sideInset, y: originY + (Self.barHeight - heartSize.height) / 2)
-        drawHeart(at: heartOrigin, unit: unit)
+        let heartOrigin = CGPoint(
+            x: QuotaBarLayout.heartLeadingX(),
+            y: originY + (Self.barHeight - heartSize.height) / 2
+        )
+        // Expanded hearts stay full; the track encodes remaining %.
+        drawHeart(at: heartOrigin, unit: unit, remainingPercent: 100)
 
-        let trackX = heartOrigin.x + heartSize.width + unit
+        // Track starts after the control + heart column.
+        let trackX = QuotaBarLayout.trackLeadingX(unit: unit)
         let innerW = max(8, Int(floor((bounds.width - trackX - Self.sideInset) / unit)))
         let innerH = 4
         let trackHeight = CGFloat(innerH) * unit
@@ -213,13 +267,13 @@ final class PetQuotaBarView: NSView {
         )
     }
 
-    private func drawHeart(at origin: CGPoint, unit: CGFloat) {
+    private func drawHeart(at origin: CGPoint, unit: CGFloat, remainingPercent: Double) {
         let outline = NSColor.black
         let fill = NSColor(calibratedRed: 0.92, green: 0.18, blue: 0.22, alpha: 1)
         let shade = NSColor(calibratedRed: 0.68, green: 0.08, blue: 0.14, alpha: 1)
         let highlight = NSColor.white
 
-        // Classic 7×6 pixel heart fill (row 0 = bottom in AppKit y-up).
+        // Classic 7×6 pixel heart silhouette (row 0 = bottom in AppKit y-up).
         let cells: Set<[Int]> = [
             [3, 0],
             [2, 1], [3, 1], [4, 1],
@@ -233,7 +287,10 @@ final class PetQuotaBarView: NSView {
             [4, 1], [5, 2], [5, 3], [6, 3], [6, 4], [4, 2], [3, 0], [3, 1],
         ]
 
-        // 1px black border from orthogonal neighbors of fill cells.
+        let filledRows = QuotaBarLayout.heartFilledRowCount(remainingPercent: remainingPercent)
+        let filledCells = Set(cells.filter { $0[1] < filledRows })
+
+        // 1px black border from neighbors of the full silhouette (hollow upper stays outlined).
         var border = Set<[Int]>()
         for cell in cells {
             let cx = cell[0], cy = cell[1]
@@ -249,14 +306,135 @@ final class PetQuotaBarView: NSView {
         for cell in border {
             pixelRect(origin: origin, px: cell[0], py: cell[1], unit: unit).fill()
         }
-        for cell in cells {
+        for cell in filledCells {
             let color = shaded.contains(cell) ? shade : fill
             color.setFill()
             pixelRect(origin: origin, px: cell[0], py: cell[1], unit: unit).fill()
         }
-        // White glint upper-left.
+        // White glint upper-left — only when those cells are filled.
         highlight.setFill()
-        pixelRect(origin: origin, px: 1, py: 4, unit: unit).fill()
-        pixelRect(origin: origin, px: 1, py: 5, unit: unit).fill()
+        for glint in [[1, 4], [1, 5]] where filledCells.contains(glint) {
+            pixelRect(origin: origin, px: glint[0], py: glint[1], unit: unit).fill()
+        }
+    }
+}
+
+/// Circular pixel control that collapses / expands the under-feet quota bars.
+@MainActor
+final class QuotaBarCollapseButton: NSButton {
+    var isCollapsed = false {
+        didSet { needsDisplay = true }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        isBordered = false
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        title = ""
+        image = nil
+        focusRingType = .none
+        setButtonType(.momentaryChange)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: QuotaBarLayout.controlSize, height: QuotaBarLayout.controlSize)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let previousAntialias = NSGraphicsContext.current?.shouldAntialias
+        NSGraphicsContext.current?.shouldAntialias = false
+        defer {
+            if let previousAntialias {
+                NSGraphicsContext.current?.shouldAntialias = previousAntialias
+            }
+        }
+
+        drawCircularChrome(in: bounds)
+
+        // AppKit y-up: pointing down = collapse when expanded; up = expand when collapsed.
+        let pointingUp = isCollapsed
+        let unit: CGFloat = 1.5
+        let cols = 5
+        let rows = 3
+        let width = CGFloat(cols) * unit
+        let height = CGFloat(rows) * unit
+        let origin = CGPoint(x: bounds.midX - width / 2, y: bounds.midY - height / 2)
+
+        let cells: [[Int]]
+        if pointingUp {
+            cells = [
+                [2, 2],
+                [1, 1], [2, 1], [3, 1],
+                [0, 0], [1, 0], [2, 0], [3, 0], [4, 0],
+            ]
+        } else {
+            cells = [
+                [0, 2], [1, 2], [2, 2], [3, 2], [4, 2],
+                [1, 1], [2, 1], [3, 1],
+                [2, 0],
+            ]
+        }
+
+        NSColor.black.setFill()
+        for cell in cells {
+            CGRect(
+                x: origin.x + CGFloat(cell[0]) * unit,
+                y: origin.y + CGFloat(cell[1]) * unit,
+                width: unit,
+                height: unit
+            ).fill()
+        }
+    }
+
+    private func drawCircularChrome(in rect: CGRect) {
+        let unit: CGFloat = 1
+        let size = Int(floor(min(rect.width, rect.height) / unit))
+        guard size > 2 else { return }
+        let origin = CGPoint(x: rect.midX - CGFloat(size) * unit / 2, y: rect.midY - CGFloat(size) * unit / 2)
+        let radius = Double(size - 1) / 2
+        let center = Double(size - 1) / 2
+
+        NSColor.black.setFill()
+        for py in 0..<size {
+            for px in 0..<size {
+                let dx = Double(px) - center
+                let dy = Double(py) - center
+                if dx * dx + dy * dy <= radius * radius {
+                    CGRect(
+                        x: origin.x + CGFloat(px) * unit,
+                        y: origin.y + CGFloat(py) * unit,
+                        width: unit,
+                        height: unit
+                    ).fill()
+                }
+            }
+        }
+
+        let inset = 2
+        let inner = size - inset * 2
+        guard inner > 0 else { return }
+        let innerOrigin = CGPoint(x: origin.x + CGFloat(inset) * unit, y: origin.y + CGFloat(inset) * unit)
+        let innerRadius = Double(inner - 1) / 2
+        let innerCenter = Double(inner - 1) / 2
+        NSColor(calibratedWhite: 0.92, alpha: 1).setFill()
+        for py in 0..<inner {
+            for px in 0..<inner {
+                let dx = Double(px) - innerCenter
+                let dy = Double(py) - innerCenter
+                if dx * dx + dy * dy <= innerRadius * innerRadius {
+                    CGRect(
+                        x: innerOrigin.x + CGFloat(px) * unit,
+                        y: innerOrigin.y + CGFloat(py) * unit,
+                        width: unit,
+                        height: unit
+                    ).fill()
+                }
+            }
+        }
     }
 }

@@ -24,6 +24,7 @@ struct PetRunnerPreferences {
         static let showsStatusItem = "showsStatusItem"
         static let petHidden = "petHidden"
         static let quotaBarVisible = "quotaBarVisible"
+        static let quotaBarCollapsed = "quotaBarCollapsed"
         static let quotaBarMode = "quotaBarMode"
         static let petsDirectory = "petsDirectory"
         static let budgets = "budgets"
@@ -146,6 +147,12 @@ struct PetRunnerPreferences {
     var quotaBarVisible: Bool {
         get { defaults.object(forKey: Key.quotaBarVisible) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.quotaBarVisible) }
+    }
+
+    /// Collapses the under-feet quota bars to a small disclosure chevron.
+    var quotaBarCollapsed: Bool {
+        get { defaults.bool(forKey: Key.quotaBarCollapsed) }
+        nonmutating set { defaults.set(newValue, forKey: Key.quotaBarCollapsed) }
     }
 
     var quotaBarMode: QuotaBarMode {

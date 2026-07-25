@@ -101,7 +101,8 @@ enum ProviderAccountReader {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let settingsURL = home.appendingPathComponent(".claude/settings.json")
         let hasSettings = FileManager.default.fileExists(atPath: settingsURL.path)
-        // Never prompt here — dashboard polling used to re-trigger Keychain UI.
+        // Never prompt here — dashboard polling must not touch Claude Keychain.
+        // Presence is file/cache only (settings.json still marks install).
         let hasCredentials = ClaudeCredentialsStore.credentialsPresent()
         let connected = hasSettings || hasCredentials
         return ProviderAccountSnapshot(

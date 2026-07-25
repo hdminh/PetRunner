@@ -19,6 +19,13 @@ not start, embed, or connect to Codex. By default it reads
   in `Package.swift`, but do not add test-only dependencies to it.
 - `Assets/`: committed application icons. Regenerate deliberately with
   `script/generate_app_icons.sh`; do not hand-edit generated icon formats.
+- `docs/solutions/` — documented solutions to past problems (bugs, best
+  practices, workflow patterns), organized by category with YAML frontmatter
+  (`module`, `tags`, `problem_type`). Relevant when implementing or debugging
+  in documented areas.
+- `CONCEPTS.md` — shared domain vocabulary (entities, named processes, status
+  concepts). Relevant when orienting to the codebase or discussing domain
+  concepts.
 
 ## Development commands
 

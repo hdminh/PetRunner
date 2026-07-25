@@ -56,26 +56,48 @@ codesign --verify --deep --strict "$STAGE_BUNDLE"
 rm -rf "$APP_BUNDLE"
 mkdir -p "$DIST_DIR"
 /usr/bin/ditto --norsrc --noextattr "$STAGE_BUNDLE" "$APP_BUNDLE"
-# Final path may live under iCloud Documents; strip and re-sign when possible.
-xattr -cr "$APP_BUNDLE" 2>/dev/null || true
-xattr -d com.apple.FinderInfo "$APP_BUNDLE" 2>/dev/null || true
-if ! codesign \
-  --force \
-  --deep \
-  --options runtime \
-  --timestamp=none \
-  --identifier "$BUNDLE_ID" \
-  --sign - \
-  "$APP_BUNDLE"
-then
-  echo "warning: codesign on dist/ failed (iCloud/Finder xattrs). Launching the staged signed build." >&2
-  APP_BUNDLE="$STAGE_BUNDLE"
-  APP_BINARY="$STAGE_MACOS/$APP_NAME"
-  # Keep the stage until the script exits so open(1) can launch it.
-  trap - EXIT
-  trap 'rm -rf "$STAGE_ROOT"' EXIT
+
+# dist/ often lives under iCloud Documents. File Provider re-stamps
+# com.apple.FinderInfo / fpfs xattrs and codesign then fails with
+# "resource fork, Finder information, or similar detritus not allowed".
+# Prefer a durable launch path outside the synced tree when that happens.
+sign_bundle() {
+  local target="$1"
+  xattr -cr "$target" 2>/dev/null || true
+  xattr -d com.apple.FinderInfo "$target" 2>/dev/null || true
+  /usr/bin/dot_clean -m "$target" 2>/dev/null || true
+  codesign \
+    --force \
+    --deep \
+    --options runtime \
+    --timestamp=none \
+    --identifier "$BUNDLE_ID" \
+    --sign - \
+    "$target" >/dev/null
+}
+
+# iCloud Desktop & Documents stamps xattrs on .app bundles under these folders.
+# Detect by path: reading parent xattrs is often EPERM.
+under_icloud_docs() {
+  case "$1" in
+    */Documents|*/Documents/*|*/Desktop|*/Desktop/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+LAUNCH_BUNDLE="$APP_BUNDLE"
+if under_icloud_docs "$DIST_DIR" || ! sign_bundle "$APP_BUNDLE" 2>/dev/null; then
+  CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/Library/Caches}/$BUNDLE_ID"
+  LAUNCH_BUNDLE="$CACHE_ROOT/$APP_NAME.app"
+  mkdir -p "$CACHE_ROOT"
+  rm -rf "$LAUNCH_BUNDLE"
+  /usr/bin/ditto --norsrc --noextattr "$STAGE_BUNDLE" "$LAUNCH_BUNDLE"
+  sign_bundle "$LAUNCH_BUNDLE"
+  echo "note: dist/ is under Documents/Desktop (iCloud xattrs block codesign); launching $LAUNCH_BUNDLE" >&2
 fi
-codesign --verify --deep --strict "$APP_BUNDLE"
+codesign --verify --deep --strict "$LAUNCH_BUNDLE"
+APP_BUNDLE="$LAUNCH_BUNDLE"
+APP_BINARY="$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"

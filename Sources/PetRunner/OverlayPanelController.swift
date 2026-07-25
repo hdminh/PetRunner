@@ -7,6 +7,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
     var onPositionChanged: ((CGPoint) -> Void)?
     var onSizeChanged: ((CGFloat) -> Void)?
     var onFrameChanged: ((CGRect) -> Void)?
+    var onQuotaBarCollapsedChanged: ((Bool) -> Void)?
     var contextMenuProvider: (() -> NSMenu?)? {
         didSet { spriteView.contextMenuProvider = contextMenuProvider }
     }
@@ -16,7 +17,9 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
     private let containerView: NSView
     private let spriteView: SpriteView
     private let quotaBarView: PetQuotaBarView
+    private let quotaBarToggle: QuotaBarCollapseButton
     private var quotaBarSegments: [QuotaBarSegment] = []
+    private var quotaBarCollapsed = false
     private let physics = PhysicsEngine(maximumDeltaTime: 0.05)
     private var atlas: SpriteAtlas?
     private var pet: PetDescriptor?
@@ -47,6 +50,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         containerView = NSView(frame: CGRect(origin: .zero, size: spriteSize))
         spriteView = SpriteView(frame: CGRect(origin: .zero, size: spriteSize))
         quotaBarView = PetQuotaBarView(frame: .zero)
+        quotaBarToggle = QuotaBarCollapseButton(frame: .zero)
         panel = NSPanel(
             contentRect: containerView.frame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -60,6 +64,12 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         containerView.layer?.backgroundColor = NSColor.clear.cgColor
         containerView.addSubview(spriteView)
         containerView.addSubview(quotaBarView)
+        quotaBarToggle.target = self
+        quotaBarToggle.action = #selector(toggleQuotaBarCollapsed)
+        quotaBarToggle.toolTip = "Collapse quota bar"
+        quotaBarToggle.setAccessibilityLabel("Collapse quota bar")
+        quotaBarToggle.isHidden = true
+        containerView.addSubview(quotaBarToggle)
         panel.contentView = containerView
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -134,6 +144,18 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
     func setQuotaBarSegments(_ segments: [QuotaBarSegment]) {
         quotaBarSegments = segments
         quotaBarView.setSegments(segments)
+        updateQuotaBarToggleAppearance()
+        guard atlas != nil else { return }
+        let topLeft = CGPoint(x: panel.frame.minX, y: panel.frame.maxY)
+        applyLayout(spriteWidth: panel.frame.width, preserveTopLeft: topLeft)
+        panel.invalidateShadow()
+        onFrameChanged?(panel.frame)
+    }
+
+    func setQuotaBarCollapsed(_ collapsed: Bool) {
+        guard quotaBarCollapsed != collapsed else { return }
+        quotaBarCollapsed = collapsed
+        updateQuotaBarToggleAppearance()
         guard atlas != nil else { return }
         let topLeft = CGPoint(x: panel.frame.minX, y: panel.frame.maxY)
         applyLayout(spriteWidth: panel.frame.width, preserveTopLeft: topLeft)
@@ -439,7 +461,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         }
         guard now - lastPointerMovementTime <= physicalPointerLookDuration else { return nil }
 
-        let center = CGPoint(x: panel.frame.minX + spriteSize.width / 2, y: panel.frame.minY + PetQuotaBarView.preferredHeight(forCount: quotaBarSegments.count) + spriteSize.height / 2)
+        let center = CGPoint(x: panel.frame.minX + spriteSize.width / 2, y: panel.frame.minY + PetQuotaBarView.preferredHeight(forCount: quotaBarSegments.count, collapsed: quotaBarCollapsed) + spriteSize.height / 2)
         let vector = CGVector(dx: pointer.x - center.x, dy: pointer.y - center.y)
         guard let index = LookDirection.frameIndex(vector: vector) else { return nil }
         return LookDirection.atlasAddress(for: index)
@@ -457,18 +479,55 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
     private func applyLayout(spriteWidth: CGFloat, preserveTopLeft: CGPoint?) {
         let width = min(max(spriteWidth, 80), 224)
         let sprite = CGSize(width: width, height: width * SpriteAtlas.cellSize.height / SpriteAtlas.cellSize.width)
-        let barHeight = PetQuotaBarView.preferredHeight(forCount: quotaBarSegments.count)
-        let total = CGSize(width: width, height: sprite.height + barHeight)
+        let hasBars = !quotaBarSegments.isEmpty
+        let footerHeight = hasBars
+            ? PetQuotaBarView.preferredHeight(
+                forCount: quotaBarSegments.count,
+                collapsed: quotaBarCollapsed
+            )
+            : 0
+        let total = CGSize(width: width, height: sprite.height + footerHeight)
         var origin = panel.frame.origin
         if let preserveTopLeft {
             origin = CGPoint(x: preserveTopLeft.x, y: preserveTopLeft.y - total.height)
         }
         panel.setFrame(CGRect(origin: origin, size: total), display: true)
         containerView.frame = CGRect(origin: .zero, size: total)
-        // AppKit y=0 is bottom: bars under feet sit at the bottom of the panel.
-        quotaBarView.frame = CGRect(x: 0, y: 0, width: width, height: barHeight)
-        quotaBarView.isHidden = barHeight <= 0
-        spriteView.frame = CGRect(x: 0, y: barHeight, width: sprite.width, height: sprite.height)
+        // AppKit y=0 is bottom: circular toggle beside hearts, bars under feet.
+        quotaBarView.setCollapsed(quotaBarCollapsed)
+        quotaBarView.frame = CGRect(x: 0, y: 0, width: width, height: footerHeight)
+        quotaBarView.isHidden = footerHeight <= 0
+        let scale = panel.screen?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        quotaBarToggle.frame = PetQuotaBarView.toggleFrame(
+            containerWidth: width,
+            segmentCount: quotaBarSegments.count,
+            collapsed: quotaBarCollapsed,
+            scale: scale
+        )
+        quotaBarToggle.isHidden = !hasBars
+        spriteView.frame = CGRect(x: 0, y: footerHeight, width: sprite.width, height: sprite.height)
+    }
+
+    private func updateQuotaBarToggleAppearance() {
+        quotaBarToggle.isCollapsed = quotaBarCollapsed
+        if quotaBarCollapsed {
+            quotaBarToggle.toolTip = "Expand quota bar"
+            quotaBarToggle.setAccessibilityLabel("Expand quota bar")
+        } else {
+            quotaBarToggle.toolTip = "Collapse quota bar"
+            quotaBarToggle.setAccessibilityLabel("Collapse quota bar")
+        }
+        quotaBarToggle.needsDisplay = true
+    }
+
+    @objc private func toggleQuotaBarCollapsed() {
+        quotaBarCollapsed.toggle()
+        updateQuotaBarToggleAppearance()
+        let topLeft = CGPoint(x: panel.frame.minX, y: panel.frame.maxY)
+        applyLayout(spriteWidth: panel.frame.width, preserveTopLeft: topLeft)
+        panel.invalidateShadow()
+        onQuotaBarCollapsedChanged?(quotaBarCollapsed)
+        onFrameChanged?(panel.frame)
     }
 
     private func defaultOrigin(for size: CGSize) -> CGPoint {
