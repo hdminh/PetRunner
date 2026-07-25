@@ -1,7 +1,8 @@
 name: Release
 
 # Bumps package.json + macOS Info.plist, commits to main, and creates a GitHub
-# Release (tag vX.Y.Z). Publishing to npm/GitHub Packages is handled by
+# Release (tag vX.Y.Z). Optionally dispatches macos-release.yml / windows-release.yml
+# to attach DMG/EXE assets. Publishing to npm/GitHub Packages is handled by
 # publish-packages.yml on release:published.
 
 on:
@@ -27,6 +28,11 @@ on:
         required: true
         type: boolean
         default: false
+      attach_macos:
+        description: Also run macOS Release to attach .dmg assets to the tag
+        required: true
+        type: boolean
+        default: true
       attach_windows:
         description: Also run Windows Release to attach .exe assets to the tag
         required: true
@@ -126,6 +132,17 @@ jobs:
             --latest \
             --target main
           echo "Created $TAG — publish-packages.yml will run on release:published."
+
+      - name: Trigger macOS Release assets
+        if: ${{ !inputs.dry_run && inputs.attach_macos }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh workflow run macos-release.yml \
+            --ref main \
+            -f release_tag="${{ steps.bump.outputs.tag }}"
+          echo "Dispatched macOS Release for ${{ steps.bump.outputs.tag }}."
 
       - name: Trigger Windows Release assets
         if: ${{ !inputs.dry_run && inputs.attach_windows }}

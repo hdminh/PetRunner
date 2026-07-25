@@ -1,0 +1,73 @@
+name: macOS Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing GitHub Release tag to receive the macOS DMG assets
+        required: false
+        type: string
+  push:
+    paths:
+      - "Sources/**"
+      - "Support/**"
+      - "Assets/**"
+      - "DashboardWeb/**"
+      - "Package.swift"
+      - "Package.resolved"
+      - "script/package_macos_release.sh"
+      - ".github/workflows/macos-release.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos-universal:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Build universal DMG
+        run: ./script/package_macos_release.sh
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: PetRunner-macOS
+          path: |
+            dist/release/PetRunner-*-macos-universal.dmg
+            dist/release/PetRunner-*-macos-universal.dmg.sha256
+          if-no-files-found: error
+
+      - name: Prepare release assets
+        if: inputs.release_tag != ''
+        id: assets
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.release_tag }}"
+          VERSION="${TAG#v}"
+          DMG="dist/release/PetRunner-${VERSION}-macos-universal.dmg"
+          SHA="${DMG}.sha256"
+          if [[ ! -f "$DMG" || ! -f "$SHA" ]]; then
+            echo "Expected $DMG and $SHA after packaging." >&2
+            ls -la dist/release/ >&2 || true
+            exit 1
+          fi
+          cp "$DMG" "PetRunner-${VERSION}-macos-universal.dmg"
+          cp "$SHA" "PetRunner-${VERSION}-macos-universal.dmg.sha256"
+          echo "dmg=PetRunner-${VERSION}-macos-universal.dmg" >> "$GITHUB_OUTPUT"
+          echo "sha=PetRunner-${VERSION}-macos-universal.dmg.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release assets
+        if: inputs.release_tag != ''
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          files: |
+            ${{ steps.assets.outputs.dmg }}
+            ${{ steps.assets.outputs.sha }}
