@@ -12,6 +12,8 @@ using Microsoft.Win32;
 using PetRunner.Core;
 using Forms = System.Windows.Forms;
 using Brush = System.Windows.Media.Brush;
+using Brushes = System.Windows.Media.Brushes;
+using Color = System.Windows.Media.Color;
 
 namespace PetRunner.Windows;
 
