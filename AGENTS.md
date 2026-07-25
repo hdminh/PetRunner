@@ -1,17 +1,25 @@
 # PetRunner contributor guide
 
-PetRunner is a local desktop renderer for Codex-compatible custom pets. It does
-not start, embed, or connect to Codex. By default it reads
-`${CODEX_HOME:-~/.codex}/pets`; both apps also accept `--pets-dir <path>`.
+PetRunner is a local desktop pet runner and usage dashboard for
+Codex-compatible custom pets. It does not start, embed, or connect to Codex as
+a host. By default it reads `${CODEX_HOME:-~/.codex}/pets`; both apps also
+accept `--pets-dir <path>`.
+
+The product is local-first: the pet overlay, local loopback dashboard, and
+(macOS) Agent Monitor talk to on-machine state. Opt-in outbound network is
+limited to provider plan-quota and pricing-catalog refresh.
 
 ## Repository layout
 
-- `Sources/PetRunnerCore/`: shared macOS pet parsing, animation, atlas, and
-  physics logic.
-- `Sources/PetRunner/`: macOS 14+ AppKit menu-bar app and overlay window.
+- `Sources/PetRunnerCore/`: shared macOS domain logic — pet parsing, animation,
+  atlas, physics, usage parsing, and (macOS-advanced) monitor contracts.
+- `Sources/PetRunner/`: macOS 14+ AppKit menu-bar app, overlay window, local
+  dashboard HTTP server, and provider credential/HTTP clients.
+- `DashboardWeb/`: Vite/React UI served by the local loopback dashboard API.
 - `Tests/PetRunnerCoreTests/`: Swift Testing coverage for the macOS core.
-- `windows/PetRunner.Core/`: Windows counterpart of the core behavior.
-- `windows/PetRunner.Windows/`: Windows 10/11 WPF tray and overlay app.
+- `windows/PetRunner.Core/`: Windows counterpart of the pet/usage core.
+- `windows/PetRunner.Windows/`: Windows 10/11 WPF tray, overlay, and dashboard
+  host.
 - `windows/PetRunner.Tests/`: self-hosted .NET test executable.
 - `bin/` and `lib/`: Node 18+ npm CLI that installs/builds PetRunner locally.
 - `Support/Package.runtime.swift`: dependency-free SwiftPM manifest used only
@@ -26,6 +34,28 @@ not start, embed, or connect to Codex. By default it reads
 - `CONCEPTS.md` — shared domain vocabulary (entities, named processes, status
   concepts). Relevant when orienting to the codebase or discussing domain
   concepts.
+- `STRATEGY.md` — product problem, approach, and tracks of work.
+
+## Platform capability matrix
+
+Keep macOS and Windows aligned for **parity core**. Treat everything else as
+**macOS-advanced** until it is explicitly ported.
+
+| Capability | macOS | Windows | Contract |
+|---|---|---|---|
+| Pet package load, atlas, animation, physics | Yes | Yes | Parity core |
+| `--pets-dir` / `CODEX_HOME` default library | Yes | Yes | Parity core |
+| User-initiated pet import / replace / delete | Yes | Yes | Parity core |
+| Local loopback dashboard + Usage (Claude/Codex spend) | Yes | Yes | Parity core |
+| Budget-based quota bar | Yes | Yes | Parity core |
+| Agent Monitor (hooks, IPC, session history) | Yes | No | macOS-advanced (0.3.x) |
+| Cursor usage / analytics | Yes | No | macOS-advanced (0.3.x) |
+| Remote plan-quota windows | Yes | No | macOS-advanced (0.3.x) |
+| Pricing-catalog refresh (`models.dev` / LiteLLM) | Yes | Partial / none | Prefer host-layer HTTP; do not silently expand Core networking |
+
+**Monitor port strategy (0.3.x):** Agent Monitor stays macOS-only. Do not start a
+partial Windows port. When porting later, share the normalized event protocol
+and session-history schema first, then host IPC/hooks.
 
 ## Development commands
 
@@ -62,12 +92,24 @@ ignored. The top-level `bin/` directory is npm CLI source and is committed.
 
 - Validate pet packages defensively. Never follow a spritesheet symlink outside
   its pet package.
-- Keep macOS and Windows behavior aligned when changing parsing, sprite-atlas
-  addressing, animation timing, physics, pointer tracking, or CLI arguments.
+- Keep macOS and Windows behavior aligned for **parity core** (parsing,
+  sprite-atlas addressing, animation timing, physics, pointer tracking, CLI
+  pets-dir arguments, import/remove validation). Add/adjust tests on both
+  platforms when changing those contracts.
 - V2 atlas dimensions and look-direction mapping are compatibility contracts;
   add/adjust tests in both platforms when changing them.
-- Do not modify a user's pet library. The runner may scan and reload it only.
+- Do not silently mutate a user's pet library. User-confirmed import, replace,
+  and delete through the dashboard or explicit app actions are allowed; scan
+  and reload remain the default for background paths.
 - Preserve the default pet location and `CODEX_HOME` override on both platforms.
+- Outbound network is opt-in and scoped: plan-quota refresh and pricing-catalog
+  updates only, behind explicit user intent or documented refresh paths. Prefer
+  keeping live HTTP and OS credential access in the app/host layer; keep Core
+  focused on parsers, resolvers, and contracts.
+- Prefer splitting dashboard handlers and large usage modules by resource
+  (pets / usage / monitor / settings) rather than growing god objects. Full
+  Usage / Dashboard API carve is tracked as follow-up work; do not expand those
+  files without extracting when practical.
 
 ## npm CLI and release rules
 
@@ -75,12 +117,19 @@ ignored. The top-level `bin/` directory is npm CLI source and is committed.
   it must not use `postinstall` or download unsigned executable releases.
 - Maintain the `files` allow-list in `package.json` whenever a runtime source
   file is added. Verify it with `npm pack --dry-run`.
+- Vite/React remain install-time dependencies because the CLI runs
+  `dashboard:build` during local app install. Do not move them to
+  `devDependencies` unless `DashboardWeb/dist` is shipped in the package and
+  the CLI can skip the build for end users.
 - The published package is `@hdminh/pet-runner`; users invoke it with
   `npx @hdminh/pet-runner start`. The executable bin remains `pet-runner`.
 - Package versions are immutable after npm publish. Bump the version before any
   follow-up publish and verify the packed tarball before publishing.
 - Do not publish, unpublish, modify npm access, or change dist-tags unless the
   user explicitly asks for that external action.
+- Do not introduce a cloud backend (for example Supabase) into this repository
+  without an explicit STRATEGY change. Ignore local Supabase CLI cache under
+  `supabase/.temp/`.
 
 ## Change hygiene
 

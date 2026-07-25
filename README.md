@@ -175,7 +175,8 @@ dotnet run --project windows\PetRunner.Tests\PetRunner.Tests.csproj
 
 `./script/build_and_run.sh` stages `dist/PetRunner.app` and opens it. Full
 platform notes (including MSIX packaging) are in
-[docs/RUN_LOCAL.md](docs/RUN_LOCAL.md).
+[docs/RUN_LOCAL.md](docs/RUN_LOCAL.md). Contributor contracts and the
+macOS/Windows capability matrix live in [AGENTS.md](AGENTS.md).
 
 ## Publishing packages
 

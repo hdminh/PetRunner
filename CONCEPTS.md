@@ -2,6 +2,14 @@
 
 Shared domain vocabulary for this project — entities, named processes, and status concepts with project-specific meaning. Seeded with core domain vocabulary, then accretes as ce-compound and ce-compound-refresh process learnings; direct edits are fine. Glossary only, not a spec or catch-all.
 
+## Platform scope
+
+### Parity core
+Cross-platform capabilities that must stay aligned on macOS and Windows: pet package load/atlas/animation/physics, pets-dir defaults, user-initiated import/replace/delete, local loopback dashboard, Claude/Codex spend usage, and budget-based quota bars.
+
+### macOS-advanced
+Capabilities that ship on macOS first and are not required for Windows parity in 0.3.x: Agent Monitor (hooks, IPC, session history), Cursor usage/analytics, and remote plan-quota windows.
+
 ## Agent Monitor
 
 ### Agent monitor
