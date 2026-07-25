@@ -15,6 +15,10 @@ APP_BINARY="$APP_MACOS/$APP_NAME"
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 
 cd "$ROOT_DIR"
+if [[ ! -x "$ROOT_DIR/node_modules/.bin/vite" ]]; then
+  echo "Installing npm dependencies (vite not found in node_modules)..."
+  npm install
+fi
 npm run dashboard:build
 swift build
 BUILD_BINARY="$(swift build --show-bin-path)/$APP_NAME"
