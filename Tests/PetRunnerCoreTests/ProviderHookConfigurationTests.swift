@@ -145,6 +145,39 @@ struct ProviderHookConfigurationTests {
         ))
     }
 
+    @Test func normalizesNestedCostAndConversationTitleAliases() {
+        let configuration = ProviderHookConfiguration(provider: .claude)
+        let event = configuration.normalize(
+            payload: [
+                "session_id": "session",
+                "conversation_title": "Quota meters",
+                "total_cost_usd": ["usd": 0.42],
+                "message": ["model": "claude-opus-4"],
+            ],
+            eventName: "Stop"
+        )
+
+        #expect(event?.sessionName?.value == "Quota meters")
+        #expect(event?.model?.value.uppercased().contains("OPUS") == true)
+        #expect(event?.estimatedCost?.displayText == "$0.42")
+        #expect(event?.activity?.value == "Done.")
+    }
+
+    @Test func normalizesCodexApplyPatchToolActivity() {
+        let configuration = ProviderHookConfiguration(provider: .codex)
+        let event = configuration.normalize(
+            payload: [
+                "session_id": "session",
+                "tool_name": "apply_patch",
+                "tool_input": ["path": "Sources/App.swift"],
+            ],
+            eventName: "PreToolUse"
+        )
+
+        #expect(event?.status == .working)
+        #expect(event?.activity?.value == "Editing App.swift")
+    }
+
     @Test func normalizesClaudeSubagentLifecycleWithoutForwardingMessages() {
         let configuration = ProviderHookConfiguration(provider: .claude)
         #expect(configuration.events.contains("SubagentStart"))

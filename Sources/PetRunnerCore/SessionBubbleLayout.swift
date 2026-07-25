@@ -9,19 +9,39 @@ public struct SessionBubbleContent: Equatable, Sendable {
     public let modelTitle: String?
     public let primaryText: String
     public let detailRows: [String]
+    public let isSubagent: Bool
 
     public init(entry: AgentSessionSnapshot, visibleFields: [MonitorBubbleField]) {
+        let isSubagent: Bool
+        if case .subagent = entry.key.scope {
+            isSubagent = true
+        } else {
+            isSubagent = false
+        }
+        self.isSubagent = isSubagent
         modelTitle = visibleFields.contains(.model) ? entry.model?.value.uppercased() : nil
         primaryText = visibleFields.contains(.job) ? entry.activity?.value ?? entry.displayText : entry.displayText
-        detailRows = [
-            visibleFields.contains(.sessionName) ? entry.sessionName?.value : nil,
-            visibleFields.contains(.cost) ? entry.estimatedCost?.displayText : nil,
-        ].compactMap { $0 }
+        var rows: [String] = []
+        if isSubagent {
+                    if let type = entry.agentType?.value, !type.isEmpty {
+                        rows.append("SUB · \(type)")
+                    } else {
+                        rows.append("SUBAGENT")
+                    }
+        }
+        if visibleFields.contains(.sessionName), let name = entry.sessionName?.value {
+            rows.append(name)
+        }
+        if visibleFields.contains(.cost), let cost = entry.estimatedCost?.displayText {
+            rows.append(cost)
+        }
+        detailRows = rows
     }
 }
 
 public struct SessionBubbleLayout: Sendable {
-    public static let width: CGFloat = 292
+    public static let baseWidth: CGFloat = 292
+    public static let width: CGFloat = baseWidth
     public static let expandedContentSize = CGSize(width: width, height: 92)
     public static let maximumVisibleIndicators = 5
 
@@ -31,6 +51,7 @@ public struct SessionBubbleLayout: Sendable {
     public let side: ThoughtBubbleSide
     public let isCollapsed: Bool
     public let tailAnchorX: CGFloat?
+    public let scale: CGFloat
 
     public init(
         sessionCount: Int,
@@ -38,15 +59,19 @@ public struct SessionBubbleLayout: Sendable {
         detailLineCount: Int = 0,
         side: ThoughtBubbleSide = .above,
         isCollapsed: Bool,
-        tailAnchorX: CGFloat? = nil
+        tailAnchorX: CGFloat? = nil,
+        scale: CGFloat = 1
     ) {
         self.sessionCount = max(sessionCount, 0)
         self.selectedIndex = min(max(selectedIndex, 0), max(sessionCount - 1, 0))
-        self.detailLineCount = min(max(detailLineCount, 0), MonitorBubbleField.allCases.count + 1)
+        self.detailLineCount = min(max(detailLineCount, 0), MonitorBubbleField.allCases.count + 2)
         self.side = side
         self.isCollapsed = isCollapsed
         self.tailAnchorX = tailAnchorX
+        self.scale = max(0.5, min(scale, 2))
     }
+
+    public var panelWidth: CGFloat { Self.baseWidth * scale }
 
     public var indicatorIndices: [Int] {
         guard sessionCount > 0 else { return [] }
@@ -55,33 +80,33 @@ public struct SessionBubbleLayout: Sendable {
         return Array(start..<(start + count))
     }
 
-    public var bubbleHeight: CGFloat { 46 + CGFloat(detailLineCount * 16) }
+    public var bubbleHeight: CGFloat { (46 + CGFloat(detailLineCount * 16)) * scale }
 
     public var contentSize: CGSize {
-        if isCollapsed { return CGSize(width: 24, height: 18 + CGFloat(indicatorIndices.count * 14)) }
-        return CGSize(width: Self.width, height: bubbleHeight + 18)
+        if isCollapsed { return CGSize(width: 24 * scale, height: (18 + CGFloat(indicatorIndices.count * 14)) * scale) }
+        return CGSize(width: panelWidth, height: bubbleHeight + 18 * scale)
     }
 
     public var contentBounds: CGRect { CGRect(origin: .zero, size: contentSize) }
 
     public var bubbleFrame: CGRect {
-        let y: CGFloat = side == .above ? 18 : 0
-        return CGRect(x: 14, y: y, width: Self.width - 14, height: bubbleHeight)
+        let y: CGFloat = side == .above ? 18 * scale : 0
+        return CGRect(x: 14 * scale, y: y, width: panelWidth - 14 * scale, height: bubbleHeight)
     }
 
-    public var headerFrame: CGRect { CGRect(x: bubbleFrame.minX + 2, y: bubbleFrame.maxY - 22, width: bubbleFrame.width - 4, height: 20) }
-    public var metadataFrame: CGRect { CGRect(x: bubbleFrame.minX + 12, y: bubbleFrame.minY + 10, width: bubbleFrame.width - 62, height: bubbleFrame.height - 36) }
+    public var headerFrame: CGRect { CGRect(x: bubbleFrame.minX + 2 * scale, y: bubbleFrame.maxY - 22 * scale, width: bubbleFrame.width - 4 * scale, height: 20 * scale) }
+    public var metadataFrame: CGRect { CGRect(x: bubbleFrame.minX + 12 * scale, y: bubbleFrame.minY + 10 * scale, width: bubbleFrame.width - 62 * scale, height: bubbleFrame.height - 36 * scale) }
     public var sessionPositionFrame: CGRect {
         let text = "\(selectedIndex + 1)/\(max(sessionCount, 1))"
-        let width = CGFloat(text.count * 7 - 2)
-        return CGRect(x: bubbleFrame.maxX - 6 - width, y: headerFrame.minY + 8, width: width, height: 7)
+        let width = CGFloat(text.count * 7 - 2) * scale
+        return CGRect(x: bubbleFrame.maxX - (6 * scale) - width, y: headerFrame.minY + 8 * scale, width: width, height: 7 * scale)
     }
-    public var previousControlFrame: CGRect { CGRect(x: nextControlFrame.minX - 18, y: headerFrame.midY - 8, width: 16, height: 16) }
-    public var nextControlFrame: CGRect { CGRect(x: sessionPositionFrame.minX - 20, y: headerFrame.midY - 8, width: 16, height: 16) }
-    public var collapseControlFrame: CGRect { CGRect(x: bubbleFrame.minX + 6, y: bubbleFrame.maxY - 20, width: 16, height: 16) }
+    public var previousControlFrame: CGRect { CGRect(x: nextControlFrame.minX - 18 * scale, y: headerFrame.midY - 8 * scale, width: 16 * scale, height: 16 * scale) }
+    public var nextControlFrame: CGRect { CGRect(x: sessionPositionFrame.minX - 20 * scale, y: headerFrame.midY - 8 * scale, width: 16 * scale, height: 16 * scale) }
+    public var collapseControlFrame: CGRect { CGRect(x: bubbleFrame.minX + 6 * scale, y: bubbleFrame.maxY - 20 * scale, width: 16 * scale, height: 16 * scale) }
     /// Pixel reset / clear control immediately after minimize in the expanded header.
-    public var resetControlFrame: CGRect { CGRect(x: collapseControlFrame.maxX + 2, y: bubbleFrame.maxY - 20, width: 16, height: 16) }
-    public var expandControlFrame: CGRect { CGRect(x: 2, y: contentSize.height - 18, width: 20, height: 18) }
+    public var resetControlFrame: CGRect { CGRect(x: collapseControlFrame.maxX + 2 * scale, y: bubbleFrame.maxY - 20 * scale, width: 16 * scale, height: 16 * scale) }
+    public var expandControlFrame: CGRect { CGRect(x: 2 * scale, y: contentSize.height - 18 * scale, width: 20 * scale, height: 18 * scale) }
 
     public func speechTailFrames() -> [CGRect] {
         let centerX = speechTailCenterX

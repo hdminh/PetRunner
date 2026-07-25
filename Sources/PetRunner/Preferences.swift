@@ -13,11 +13,18 @@ struct PetRunnerPreferences {
         static let monitorProviders = "monitorProviders"
         static let monitorProvider = "monitorProvider"
         static let monitorBubbleCollapsed = "monitorBubbleCollapsed"
+        static let monitorBubbleScale = "monitorBubbleScale"
+        static let monitorBubbleFontSize = "monitorBubbleFontSize"
+        static let monitorVisibleFields = "monitorVisibleFields"
+        static let monitorUseProviderHeaderTint = "monitorUseProviderHeaderTint"
         static let autonomyEnabled = "autonomyEnabled"
         static let autonomyMinimumWait = "autonomyMinimumWait"
         static let autonomyMaximumWait = "autonomyMaximumWait"
         static let autonomyEnabledActions = "autonomyEnabledActions"
         static let showsStatusItem = "showsStatusItem"
+        static let petHidden = "petHidden"
+        static let quotaBarVisible = "quotaBarVisible"
+        static let quotaBarMode = "quotaBarMode"
         static let petsDirectory = "petsDirectory"
         static let budgets = "budgets"
         static let providerToggles = "providerToggles"
@@ -92,6 +99,33 @@ struct PetRunnerPreferences {
         nonmutating set { defaults.set(newValue, forKey: Key.monitorBubbleCollapsed) }
     }
 
+    var monitorBubbleAppearance: MonitorBubbleAppearance {
+        get {
+            let scale = defaults.string(forKey: Key.monitorBubbleScale).flatMap(MonitorBubbleScale.init(rawValue:)) ?? .default
+            let fontSize = defaults.string(forKey: Key.monitorBubbleFontSize).flatMap(MonitorBubbleFontSize.init(rawValue:)) ?? .md
+            let fields: [MonitorBubbleField]
+            if let stored = defaults.stringArray(forKey: Key.monitorVisibleFields) {
+                let parsed = stored.compactMap(MonitorBubbleField.init(rawValue:))
+                fields = parsed.isEmpty ? MonitorBubbleField.allCases : parsed
+            } else {
+                fields = MonitorBubbleField.allCases
+            }
+            let tint = defaults.object(forKey: Key.monitorUseProviderHeaderTint) as? Bool ?? true
+            return MonitorBubbleAppearance(
+                scale: scale,
+                fontSize: fontSize,
+                visibleFields: fields,
+                useProviderHeaderTint: tint
+            )
+        }
+        nonmutating set {
+            defaults.set(newValue.scale.rawValue, forKey: Key.monitorBubbleScale)
+            defaults.set(newValue.fontSize.rawValue, forKey: Key.monitorBubbleFontSize)
+            defaults.set(newValue.visibleFields.map(\.rawValue), forKey: Key.monitorVisibleFields)
+            defaults.set(newValue.useProviderHeaderTint, forKey: Key.monitorUseProviderHeaderTint)
+        }
+    }
+
     var autonomyEnabled: Bool {
         get { defaults.object(forKey: Key.autonomyEnabled) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.autonomyEnabled) }
@@ -100,6 +134,23 @@ struct PetRunnerPreferences {
     var showsStatusItem: Bool {
         get { defaults.object(forKey: Key.showsStatusItem) as? Bool ?? true }
         nonmutating set { defaults.set(newValue, forKey: Key.showsStatusItem) }
+    }
+
+    /// Temporarily hides the desktop overlay without clearing the selected pet.
+    var petHidden: Bool {
+        get { defaults.bool(forKey: Key.petHidden) }
+        nonmutating set { defaults.set(newValue, forKey: Key.petHidden) }
+    }
+
+    /// Shows pixel HP bars under the pet for the Monitor-selected provider.
+    var quotaBarVisible: Bool {
+        get { defaults.object(forKey: Key.quotaBarVisible) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Key.quotaBarVisible) }
+    }
+
+    var quotaBarMode: QuotaBarMode {
+        get { defaults.string(forKey: Key.quotaBarMode).flatMap(QuotaBarMode.init(rawValue:)) ?? .auto }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Key.quotaBarMode) }
     }
 
     /// Optional custom pets library path. Ignored when `--pets-dir` is passed on launch.

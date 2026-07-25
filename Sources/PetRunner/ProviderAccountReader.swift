@@ -1,6 +1,5 @@
 import Foundation
 import PetRunnerCore
-import Security
 
 struct ProviderAccountSnapshot: Equatable, Sendable {
     var connected: Bool
@@ -102,7 +101,8 @@ enum ProviderAccountReader {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let settingsURL = home.appendingPathComponent(".claude/settings.json")
         let hasSettings = FileManager.default.fileExists(atPath: settingsURL.path)
-        let hasCredentials = claudeCredentialsPresent()
+        // Never prompt here — dashboard polling used to re-trigger Keychain UI.
+        let hasCredentials = ClaudeCredentialsStore.credentialsPresent()
         let connected = hasSettings || hasCredentials
         return ProviderAccountSnapshot(
             connected: connected,
@@ -114,17 +114,6 @@ enum ProviderAccountReader {
             status: connected ? "Signed in" : "Not signed in",
             updatedAt: modificationDate(at: settingsURL)
         )
-    }
-
-    private static func claudeCredentialsPresent() -> Bool {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "Claude Code-credentials",
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecReturnAttributes as String: true
-        ]
-        var result: CFTypeRef?
-        return SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess
     }
 
     private static func jwtClaims(_ token: String?) -> [String: Any]? {

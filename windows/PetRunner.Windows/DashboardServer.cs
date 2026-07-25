@@ -13,6 +13,9 @@ internal sealed record DashboardHostSnapshot(
     string? SelectedPetId,
     double Width,
     bool AutonomyEnabled,
+    bool PetHidden,
+    bool QuotaBarVisible,
+    string QuotaBarMode,
     AutonomyConfiguration Autonomy,
     ProviderBudgetSettings ClaudeBudget,
     ProviderBudgetSettings CodexBudget,
@@ -33,11 +36,18 @@ internal sealed record DashboardCallbacks(
     Action RevealPetsDirectory,
     Action<SettingsRequest> UpdateSettings);
 
+internal sealed record SettingsRequest(
+    bool? ShowStatusItem = null,
+    bool? PetHidden = null,
+    bool? QuotaBarVisible = null,
+    string? QuotaBarMode = null,
+    BudgetCollection? Budgets = null,
+    string? PetsDirectory = null);
+
 internal sealed record PetRequest(string? Id = null, double? Width = null);
 internal sealed record AutonomyRequest(bool? Enabled = null, double? MinimumWait = null, double? MaximumWait = null, string[]? Actions = null);
 internal sealed record BudgetRequest(double? DailyUSD = null, double? MonthlyUSD = null);
 internal sealed record BudgetCollection(BudgetRequest? Claude = null, BudgetRequest? Codex = null, BudgetRequest? Cursor = null);
-internal sealed record SettingsRequest(bool? ShowStatusItem = null, BudgetCollection? Budgets = null, string? PetsDirectory = null);
 
 internal sealed class DashboardApiException(string code, string message, int statusCode = 400) : Exception(message)
 {
@@ -274,6 +284,9 @@ internal sealed class DashboardServer : IDisposable
             settings = new
             {
                 showStatusItem = true,
+                petHidden = snapshot.PetHidden,
+                quotaBarVisible = snapshot.QuotaBarVisible,
+                quotaBarMode = snapshot.QuotaBarMode,
                 petsDirectory = snapshot.PetsDirectory,
                 petsDirectorySource = snapshot.PetsDirectorySource,
                 petsDirectoryEditable = snapshot.PetsDirectoryEditable,

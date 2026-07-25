@@ -125,7 +125,8 @@ export function parseLocation(hash = typeof window !== "undefined" ? window.loca
   if (path === "pets") {
     return { view: "pets", analyticsTab: "sessions", provider, panel: null };
   }
-  if (path === "monitor") {
+  if (path === "monitor" || path === "bubble") {
+    // Legacy `#/bubble` redirects into Monitor (bubble controls live there).
     return { view: "monitor", analyticsTab: "sessions", provider, panel: null };
   }
   const analyticsMatch = /^analytics(?:\/(sessions|projects|models))?$/.exec(path);

@@ -89,22 +89,25 @@ final class SessionBubblePanelController {
         entries: [AgentSessionSnapshot],
         selectedIndex: Int,
         petFrame: CGRect,
-        visibleFields: [MonitorBubbleField],
+        appearance: MonitorBubbleAppearance,
         isCollapsed: Bool = false
     ) {
         guard entries.indices.contains(selectedIndex) else { hide(); return }
         let entry = entries[selectedIndex]
-        let content = SessionBubbleContent(entry: entry, visibleFields: visibleFields)
-        let jobLineCount = wrappedJobLineCount(for: content.primaryText)
+        let content = SessionBubbleContent(entry: entry, visibleFields: appearance.visibleFields)
+        applyFonts(appearance.fontSize)
+        let jobLineCount = wrappedJobLineCount(for: content.primaryText, scale: appearance.scale.factor)
         let bodyLineCount = (content.modelTitle == nil ? 0 : 1) + jobLineCount + content.detailRows.count
         let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(petFrame) }) ?? NSScreen.main
-        let visible = screen?.visibleFrame ?? petFrame.insetBy(dx: -SessionBubbleLayout.width, dy: -200)
+        let visible = screen?.visibleFrame ?? petFrame.insetBy(dx: -SessionBubbleLayout.baseWidth * appearance.scale.factor, dy: -200)
+        let scale = appearance.scale.factor
         let provisional = SessionBubbleLayout(
             sessionCount: entries.count,
             selectedIndex: selectedIndex,
             detailLineCount: bodyLineCount,
             side: .above,
-            isCollapsed: isCollapsed
+            isCollapsed: isCollapsed,
+            scale: scale
         )
         let side = SessionBubbleLayout.preferredSide(petFrame: petFrame, visibleFrame: visible, contentSize: provisional.contentSize)
         let unanchoredLayout = SessionBubbleLayout(
@@ -112,7 +115,8 @@ final class SessionBubblePanelController {
             selectedIndex: selectedIndex,
             detailLineCount: bodyLineCount,
             side: side,
-            isCollapsed: isCollapsed
+            isCollapsed: isCollapsed,
+            scale: scale
         )
         let tailAnchorX = petFrame.midX - unanchoredLayout.origin(petFrame: petFrame, visibleFrame: visible).x
         let layout = SessionBubbleLayout(
@@ -121,7 +125,8 @@ final class SessionBubblePanelController {
             detailLineCount: bodyLineCount,
             side: side,
             isCollapsed: isCollapsed,
-            tailAnchorX: tailAnchorX
+            tailAnchorX: tailAnchorX,
+            scale: scale
         )
         let contentSize = layout.contentSize
         panel.setContentSize(contentSize)
@@ -132,6 +137,8 @@ final class SessionBubblePanelController {
         background.selectedIndex = selectedIndex
         background.providerLabel = entry.provider.displayLabel
         background.headerColor = entry.provider.headerColor
+        background.useProviderHeaderTint = appearance.useProviderHeaderTint
+        background.layoutScale = scale
         background.sessionPosition = "\(selectedIndex + 1)/\(entries.count)"
         background.indicatorTones = entries.map(\.indicatorTone)
         background.detailLineCount = bodyLineCount
@@ -169,6 +176,12 @@ final class SessionBubblePanelController {
     @objc private func expand() { onExpand?() }
     @objc private func reset() { onReset?() }
 
+    private func applyFonts(_ fontSize: MonitorBubbleFontSize) {
+        modelLabel.font = .systemFont(ofSize: fontSize.modelPointSize, weight: .bold)
+        jobLabel.font = .systemFont(ofSize: fontSize.bodyPointSize, weight: .medium)
+        detailLabel.font = .monospacedSystemFont(ofSize: fontSize.bodyPointSize, weight: .medium)
+    }
+
     private func configure(_ button: NSButton, action: Selector) {
         button.title = ""
         button.isBordered = false
@@ -191,10 +204,10 @@ final class SessionBubblePanelController {
         return "Speech bubble. \(entry.provider.displayLabel)\(model), \(entry.detailText), \(entry.displayText), session \(selectedIndex + 1) of \(entryCount)."
     }
 
-    private func wrappedJobLineCount(for text: String) -> Int {
+    private func wrappedJobLineCount(for text: String, scale: CGFloat) -> Int {
         let font = jobLabel.font ?? .systemFont(ofSize: 10, weight: .medium)
         let bounds = (text as NSString).boundingRect(
-            with: CGSize(width: SessionBubbleLayout.width - 76, height: .greatestFiniteMagnitude),
+            with: CGSize(width: SessionBubbleLayout.baseWidth * scale - 76 * scale, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: [.font: font]
         )
