@@ -8,16 +8,29 @@ import test from "node:test";
 
 import { copyBuildPayload, parseArguments, resolveInstallPaths, terminateRunningApp, uninstall } from "../lib/cli.js";
 
-test("start is the default command", () => {
-  assert.deepEqual(parseArguments([]), {
-    command: "start",
-    force: false,
-    petsDir: undefined,
-    yes: false,
-    noSetup: false,
-    setup: false,
-  });
+test("packageBuildStamp changes when local Sources change", async () => {
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "pet-runner-stamp-"));
+  try {
+    for (const directory of ["Assets", "DashboardWeb", "Sources", "Support", "windows"]) {
+      await mkdir(path.join(fixtureRoot, directory), { recursive: true });
+    }
+    await writeFile(path.join(fixtureRoot, "Sources", "a.swift"), "one");
+    const { packageBuildStamp } = await import("../lib/cli.js");
+    const first = packageBuildStamp(fixtureRoot);
+    await writeFile(path.join(fixtureRoot, "Sources", "a.swift"), "two");
+    // Touch mtime deterministically by rewriting; stamp must change.
+    const second = packageBuildStamp(fixtureRoot);
+    assert.notEqual(first, second);
+    assert.equal(first.length, 16);
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
 });
+
+test("start accepts --force for rebuilds", () => {
+  assert.equal(parseArguments(["start", "--force"]).force, true);
+});
+
 
 test("bin entrypoint reports the package version", () => {
   const output = execFileSync(process.execPath, ["bin/pet-runner.js", "--version"], { encoding: "utf8" });

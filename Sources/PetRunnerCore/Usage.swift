@@ -673,6 +673,7 @@ public enum BundledPricing {
 
     private static let claudeRates: [String: Rates] = [
         "claude-fable-5": .init(input: 1e-5, cachedInput: 1e-6, cacheCreation: 1.25e-5, output: 5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
+        "claude-mythos-5": .init(input: 1e-5, cachedInput: 1e-6, cacheCreation: 1.25e-5, output: 5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
         "claude-haiku-4-5": .init(input: 1e-6, cachedInput: 1e-7, cacheCreation: 1.25e-6, output: 5e-6, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
         "claude-opus-4": .init(input: 1.5e-5, cachedInput: 1.5e-6, cacheCreation: 1.875e-5, output: 7.5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
         "claude-opus-4-1": .init(input: 1.5e-5, cachedInput: 1.5e-6, cacheCreation: 1.875e-5, output: 7.5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
@@ -833,9 +834,10 @@ public enum BundledPricing {
         }
         if let rates = claudeRates[model] { return rates }
         // Latest family fallback (prefer Sonnet 5 / Opus 5 when present).
-        for family in ["fable", "opus", "sonnet", "haiku"] where model.contains(family) {
+        for family in ["mythos", "fable", "opus", "sonnet", "haiku"] where model.contains(family) {
             let fallbackKey: String
             switch family {
+            case "mythos": fallbackKey = "claude-mythos-5"
             case "fable": fallbackKey = "claude-fable-5"
             case "opus": fallbackKey = "claude-opus-5"
             case "sonnet": fallbackKey = "claude-sonnet-5"
