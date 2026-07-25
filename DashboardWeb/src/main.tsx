@@ -465,6 +465,7 @@ export function ProviderView({ provider, panel, onPanelChange, providerInfos, en
             <p>{connectionNote(provider, detail, cursor)}</p>
             <ExternalLinks links={detail} />
           </div>
+          <ProviderQuotaMeters provider={provider} quota={detail.quota} />
           <ProviderBudgetEditor key={provider} provider={provider} budget={budget} onSave={onSaveBudget} />
         </Card>
         <div className="providers-panel-toggle" role="tablist" aria-label="Provider panel">
@@ -881,8 +882,88 @@ export function ExternalLinks({ links }: { links?: Pick<ProviderInfo, "usageURL"
 function defaultProviderInfo(id: Provider): ProviderInfo {
   return {
     id, name: id, enabled: true, connected: false, account: null, email: null, plan: null, organization: null,
-    source: null, status: null, updatedAt: null, todayTokens: 0, todayCost: 0, monthCost: 0, sessionCount: 0, costLabel: null,
+    source: null, status: null, updatedAt: null, todayTokens: 0, todayCost: 0, monthCost: 0, sessionCount: 0, costLabel: null, quota: null,
   };
+}
+
+function formatQuotaReset(resetsAt: string | null): string {
+  if (!resetsAt) return "";
+  const date = new Date(resetsAt);
+  if (Number.isNaN(date.valueOf())) return "";
+  const delta = date.getTime() - Date.now();
+  if (delta <= 0) return "Reset due";
+  const hours = Math.round(delta / 3_600_000);
+  if (hours < 48) return `Resets in ${hours}h`;
+  const days = Math.round(hours / 24);
+  return `Resets in ${days}d`;
+}
+
+function QuotaMeter({ window }: { window: NonNullable<ProviderInfo["quota"]>["primary"] }) {
+  if (!window) return null;
+  const used = Math.max(0, Math.min(100, window.usedPercent));
+  const remaining = Math.max(0, Math.min(100, window.remainingPercent));
+  return (
+    <div className="quota-meter">
+      <div className="quota-meter-head">
+        <strong>{window.label ?? "Quota"}</strong>
+        <span>{remaining.toFixed(0)}% left · {used.toFixed(0)}% used</span>
+      </div>
+      <div className="quota-meter-track" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(used)} aria-label={window.label ?? "Quota"}>
+        <i style={{ width: `${used}%` }} />
+      </div>
+      {window.resetsAt ? <small>{formatQuotaReset(window.resetsAt)}</small> : null}
+    </div>
+  );
+}
+
+function ProviderQuotaMeters({ provider, quota }: { provider: Provider; quota?: ProviderInfo["quota"] }) {
+  if (!quota) {
+    return (
+      <div className="provider-quota">
+        <p className="kicker">Plan quota</p>
+        <p className="muted">Quota refreshes with usage. Sign in to the provider if meters stay empty.</p>
+      </div>
+    );
+  }
+  const hasBars = quota.primary || quota.secondary || quota.tertiary || quota.monthlySpend;
+  return (
+    <div className="provider-quota">
+      <div className="provider-settings-head">
+        <div>
+          <p className="kicker">Plan quota</p>
+          <h2>{provider === "cursor" ? "Billing cycle" : "Session & weekly"}</h2>
+        </div>
+        <small>{quota.source}</small>
+      </div>
+      {!hasBars ? (
+        <p className="muted">
+          {quota.message ?? "Plan meters are unavailable for this account right now."}
+        </p>
+      ) : null}
+      <div className="quota-meters">
+        <QuotaMeter window={quota.primary} />
+        <QuotaMeter window={quota.secondary} />
+        <QuotaMeter window={quota.tertiary} />
+      </div>
+      {quota.monthlySpend ? (
+        <div className="quota-meter">
+          <div className="quota-meter-head">
+            <strong>{provider === "cursor" ? "On-demand" : "Extra usage"}</strong>
+            <span>
+              {formatCost(quota.monthlySpend.usedUSD)}
+              {quota.monthlySpend.limitUSD != null ? ` / ${formatCost(quota.monthlySpend.limitUSD)}` : ""}
+            </span>
+          </div>
+          {quota.monthlySpend.limitUSD != null && quota.monthlySpend.limitUSD > 0 ? (
+            <div className="quota-meter-track" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round((quota.monthlySpend.usedUSD / quota.monthlySpend.limitUSD) * 100)}>
+              <i style={{ width: `${Math.min(100, (quota.monthlySpend.usedUSD / quota.monthlySpend.limitUSD) * 100)}%` }} />
+            </div>
+          ) : null}
+          {quota.monthlySpend.resetsAt ? <small>{formatQuotaReset(quota.monthlySpend.resetsAt)}</small> : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function connectionNote(provider: Provider, info: ProviderInfo, cursor?: AppState["cursor"]): string {

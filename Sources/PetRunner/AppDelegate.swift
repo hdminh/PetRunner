@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var quickActions: QuickActionsMenuController?
     private var usageCoordinator: UsageCoordinator?
     private var usageSnapshot: UsageSnapshot?
+    private var quotaSnapshots: [UsageProvider: ProviderQuotaSnapshot] = [:]
     private let budgetNotifications = BudgetNotificationController()
     private var usageRefreshTimer: Timer?
     private var petsDirectory: URL!
@@ -53,6 +54,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.onConfigureMonitor = { [weak self] in self?.presentMonitorSetup() }
         menu.onRepairMonitor = { [weak self] in self?.repairMonitorHooks() }
         menu.onToggleAutonomy = { [weak self] in self?.toggleAutonomy() }
+        menu.onTogglePetHidden = { [weak self] in self?.togglePetHidden() }
+        menu.onToggleQuotaBarVisible = { [weak self] in self?.toggleQuotaBarVisible() }
+        menu.onSetQuotaBarMode = { [weak self] mode in self?.setQuotaBarMode(mode) }
         menu.onQuit = { NSApp.terminate(nil) }
         statusMenu = menu
         menu.setVisible(preferences.showsStatusItem)
@@ -64,16 +68,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 selectedPetID: self.preferences.selectedPetID,
                 monitorEnabled: self.preferences.monitorEnabled,
                 autonomyEnabled: self.preferences.autonomyEnabled,
+                petHidden: self.preferences.petHidden,
+                quotaBarVisible: self.preferences.quotaBarVisible,
+                quotaBarMode: self.preferences.quotaBarMode,
                 todayUsage: self.usageSnapshot?.todayText ?? "No data",
                 monthUsage: self.usageSnapshot?.monthText ?? "No data"
             )
         }
         quickActions.onOpenDashboard = { [weak self] in self?.openDashboard() }
-        quickActions.onRefreshUsage = { [weak self] in self?.refreshUsage() }
+        quickActions.onRefreshUsage = { [weak self] in self?.refreshUsage(allowClaudeKeychainPrompt: true) }
         quickActions.onSelectPet = { [weak self] in self?.selectPet(id: $0) }
         quickActions.onImportPet = { [weak self] in self?.openDashboard() }
         quickActions.onToggleAutonomy = { [weak self] in self?.toggleAutonomy() }
         quickActions.onToggleMonitor = { [weak self] in self?.toggleMonitor() }
+        quickActions.onTogglePetHidden = { [weak self] in self?.togglePetHidden() }
+        quickActions.onToggleQuotaBarVisible = { [weak self] in self?.toggleQuotaBarVisible() }
+        quickActions.onSetQuotaBarMode = { [weak self] mode in self?.setQuotaBarMode(mode) }
         quickActions.onQuit = { NSApp.terminate(nil) }
         self.quickActions = quickActions
         overlay.contextMenuProvider = { [weak quickActions] in quickActions?.makeMenu() }
@@ -153,6 +163,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let loadedPet {
             preferences.selectedPetID = loadedPet.id
+            applyPetVisibility()
+            refreshQuotaBar()
         } else {
             overlay.hide()
             preferences.selectedPetID = nil
@@ -165,6 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try overlay.show(pet: pet, width: preferences.petWidth, savedOrigin: preferences.origin)
             preferences.selectedPetID = pet.id
+            applyPetVisibility()
         } catch {
             failures.removeAll { $0.id == pet.id }
             failures.append(PetFailure(id: pet.id, message: error.localizedDescription))
@@ -186,7 +199,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             selectedID: preferences.selectedPetID,
             width: preferences.petWidth,
             monitorEnabled: preferences.monitorEnabled,
-            autonomyEnabled: preferences.autonomyEnabled
+            autonomyEnabled: preferences.autonomyEnabled,
+            petHidden: preferences.petHidden,
+            quotaBarVisible: preferences.quotaBarVisible,
+            quotaBarMode: preferences.quotaBarMode
         )
         refreshStatusItemSpend()
     }
@@ -282,6 +298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         preferences.monitorProvider = provider
         preferences.monitorEnabled = true
         refreshMenu()
+        refreshQuotaBar()
     }
 
     private func disableMonitor() throws {
@@ -291,6 +308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clearMonitorSessions()
         monitorBridge.stop()
         refreshMenu()
+        refreshQuotaBar()
     }
 
     /// Clears stuck or finished monitor presentation without disabling hooks.
@@ -378,6 +396,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         preferences.autonomyEnabled.toggle()
         overlay.setAutonomyEnabled(preferences.autonomyEnabled)
         refreshMenu()
+    }
+
+    private func togglePetHidden() {
+        preferences.petHidden.toggle()
+        applyPetVisibility()
+        refreshMenu()
+    }
+
+    private func toggleQuotaBarVisible() {
+        preferences.quotaBarVisible.toggle()
+        refreshQuotaBar()
+        refreshMenu()
+    }
+
+    private func setQuotaBarMode(_ mode: QuotaBarMode) {
+        preferences.quotaBarMode = mode
+        if mode != .off {
+            preferences.quotaBarVisible = true
+        }
+        refreshQuotaBar()
+        refreshMenu()
+    }
+
+    /// Honors `petHidden` without clearing the selected pet.
+    private func applyPetVisibility() {
+        guard let id = preferences.selectedPetID,
+              let pet = pets.first(where: { $0.id == id })
+        else { return }
+        do {
+            if preferences.petHidden {
+                if overlay.hasLoadedPet {
+                    overlay.setVisible(false)
+                } else {
+                    try overlay.show(pet: pet, width: preferences.petWidth, savedOrigin: preferences.origin)
+                    overlay.setVisible(false)
+                }
+            } else {
+                try overlay.show(pet: pet, width: preferences.petWidth, savedOrigin: preferences.origin)
+            }
+        } catch {
+            logger.error("Failed to apply pet visibility: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private func setAutonomyConfiguration(_ configuration: AutonomyConfiguration) {
@@ -484,6 +544,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             historyStore: { [weak self] in self?.historyStore },
             historyError: { [weak self] in self?.historyError },
             usageState: { [weak self] in self?.usageSnapshot },
+            quotaState: { [weak self] in self?.quotaSnapshots ?? [:] },
             petState: { [weak self] in
                 guard let self else {
                     return DashboardPetState(
@@ -505,6 +566,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             },
             showsStatusItem: { [weak self] in self?.preferences.showsStatusItem ?? true },
+            petHidden: { [weak self] in self?.preferences.petHidden ?? false },
+            quotaBarVisible: { [weak self] in self?.preferences.quotaBarVisible ?? true },
+            quotaBarMode: { [weak self] in self?.preferences.quotaBarMode ?? .auto },
             budgetConfigurations: { [weak self] in self?.preferences.budgetConfigurations ?? [:] },
             isProviderEnabled: { [weak self] provider in self?.preferences.isProviderEnabled(provider) ?? true },
             onSelectPet: { [weak self] in self?.selectPet(id: $0) },
@@ -520,12 +584,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.overlay.setAutonomyEnabled(enabled)
                 self.setAutonomyConfiguration(configuration)
             },
-            onRefreshUsage: { [weak self] in self?.refreshUsage() },
+            onRefreshUsage: { [weak self] in self?.refreshUsage(allowClaudeKeychainPrompt: true) },
             onSetStatusItemVisible: { [weak self] visible in
                 guard let self else { return }
                 self.preferences.showsStatusItem = visible
                 self.statusMenu?.setVisible(visible)
                 if visible { self.refreshStatusItemSpend() }
+            },
+            onSetPetHidden: { [weak self] hidden in
+                guard let self else { return }
+                self.preferences.petHidden = hidden
+                self.applyPetVisibility()
+                self.refreshMenu()
+            },
+            onSetQuotaBarVisible: { [weak self] visible in
+                guard let self else { return }
+                self.preferences.quotaBarVisible = visible
+                self.refreshQuotaBar()
+                self.refreshMenu()
+            },
+            onSetQuotaBarMode: { [weak self] mode in
+                guard let self else { return }
+                self.preferences.quotaBarMode = mode
+                self.refreshQuotaBar()
+                self.refreshMenu()
             },
             onImportPet: { [weak self] in self?.importPet() },
             onChoosePetsDirectory: { [weak self] in self?.choosePetsDirectory() },
@@ -538,6 +620,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.preferences.budgetConfigurations = configurations
                 self.refreshUsage()
+                self.refreshQuotaBar()
             },
             onSetProviderEnabled: { [weak self] provider, enabled in
                 guard let self else { return }
@@ -549,13 +632,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return DashboardMonitorState(
                         enabled: false,
                         provider: nil,
-                        detections: AgentProvider.allCases.map { ProviderDetection(provider: $0, isDetected: false) }
+                        detections: AgentProvider.allCases.map { ProviderDetection(provider: $0, isDetected: false) },
+                        appearance: .default
                     )
                 }
                 return DashboardMonitorState(
                     enabled: self.preferences.monitorEnabled,
                     provider: self.preferences.monitorProvider,
-                    detections: self.monitorProviderDetections()
+                    detections: self.monitorProviderDetections(),
+                    appearance: self.preferences.monitorBubbleAppearance
                 )
             },
             onSetMonitor: { [weak self] enabled, provider in
@@ -581,6 +666,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onResetMonitor: { [weak self] in
                 self?.resetMonitorSessions()
+            },
+            onSetMonitorAppearance: { [weak self] appearance in
+                guard let self else { return }
+                self.preferences.monitorBubbleAppearance = appearance
+                self.refreshMonitorPresentation()
             }
         )
         dashboardAPI = api
@@ -603,32 +693,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func refreshUsage() {
+    private func refreshUsage(allowClaudeKeychainPrompt: Bool = false) {
         guard let usageCoordinator else { return }
         Task { [weak self] in
             let configurations = self?.preferences.budgetConfigurations ?? [:]
             let enabledProviders = self?.preferences.enabledProviders ?? Set(UsageProvider.allCases)
-            guard let snapshot = try? await usageCoordinator.refresh(
+            async let usage = try? usageCoordinator.refresh(
                 configurations: configurations,
                 enabledProviders: enabledProviders
-            ) else { return }
+            )
+            // CodexBar-style: launch/timer never prompt. Only explicit Refresh
+            // Usage (menu / dashboard) may show Claude Keychain UI once.
+            async let quotas = ProviderQuotaClient.fetchAll(
+                enabled: enabledProviders,
+                allowClaudeKeychainPrompt: allowClaudeKeychainPrompt
+            )
+            let snapshot = await usage
+            let quotaSnapshots = await quotas
             await MainActor.run {
-                self?.usageSnapshot = snapshot
-                self?.refreshStatusItemSpend()
-                self?.budgetNotifications.present(snapshot.alerts) { [weak self] animation in
-                    self?.refreshMonitorPresentation()
-                    self?.overlay.setMonitorAnimation(animation ?? self?.monitorStore.selected?.animation)
+                if let snapshot {
+                    self?.usageSnapshot = snapshot
+                    self?.refreshStatusItemSpend()
+                    self?.budgetNotifications.present(snapshot.alerts) { [weak self] animation in
+                        self?.refreshMonitorPresentation()
+                        self?.overlay.setMonitorAnimation(animation ?? self?.monitorStore.selected?.animation)
+                    }
                 }
+                self?.quotaSnapshots = quotaSnapshots
+                self?.refreshQuotaBar()
             }
         }
+    }
+
+    private func refreshQuotaBar() {
+        let provider = preferences.monitorProvider.flatMap { UsageProvider(rawValue: $0.rawValue) }
+        let budget = provider.flatMap { preferences.budgetConfigurations[$0] } ?? .init()
+        let quota = provider.flatMap { quotaSnapshots[$0] }
+        let todaySpend: Double
+        let monthSpend: Double
+        if let provider {
+            todaySpend = UsageAggregate(
+                records: usageSnapshot?.today.records.filter { $0.provider == provider } ?? []
+            ).knownCostUSD
+            monthSpend = UsageAggregate(
+                records: usageSnapshot?.month.records.filter { $0.provider == provider } ?? []
+            ).knownCostUSD
+        } else {
+            todaySpend = 0
+            monthSpend = 0
+        }
+        let result = QuotaBarResolver.resolve(.init(
+            provider: provider,
+            visible: preferences.quotaBarVisible,
+            mode: preferences.quotaBarMode,
+            budget: budget,
+            quota: quota,
+            spentDailyUSD: todaySpend,
+            spentMonthlyUSD: monthSpend
+        ))
+        if let seeded = result.seededBudget, let provider {
+            var configurations = preferences.budgetConfigurations
+            configurations[provider] = seeded
+            preferences.budgetConfigurations = configurations
+        }
+        overlay.setQuotaBarSegments(result.segments)
     }
 
     private func configureUsageCoordinator() {
         do {
             usageCoordinator = try UsageCoordinator(storeURL: AgentMonitorBridge.runtimeDirectoryURL.appendingPathComponent("usage-history.sqlite", isDirectory: false))
-            refreshUsage()
+            refreshUsage(allowClaudeKeychainPrompt: false)
             usageRefreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.refreshUsage() }
+                MainActor.assumeIsolated { self?.refreshUsage(allowClaudeKeychainPrompt: false) }
             }
             if let usageRefreshTimer { RunLoop.main.add(usageRefreshTimer, forMode: .common) }
         } catch {
@@ -674,7 +810,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             entries: monitorStore.entries,
             selectedIndex: monitorStore.selectedIndex,
             petFrame: overlay.frame,
-            visibleFields: MonitorBubbleField.allCases,
+            appearance: preferences.monitorBubbleAppearance,
             isCollapsed: preferences.monitorBubbleCollapsed
         )
     }

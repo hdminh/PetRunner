@@ -238,17 +238,27 @@ public struct ProviderHookConfiguration: Sendable {
     }
 
     private func modelCandidate(in payload: [String: Any]) -> AgentSessionModel? {
-        for key in ["model", "model_name", "modelName"] {
-            if let value = payload[key] as? String, let model = AgentSessionModel.sanitized(value) {
+        for key in ["model", "model_name", "modelName", "agent_model", "agentModel"] {
+            if let value = stringValue(payload[key]), let model = AgentSessionModel.sanitized(value) {
                 return model
+            }
+        }
+        if let nested = payload["message"] as? [String: Any] {
+            for key in ["model", "model_name", "modelName"] {
+                if let value = stringValue(nested[key]), let model = AgentSessionModel.sanitized(value) {
+                    return model
+                }
             }
         }
         return nil
     }
 
     private func sessionNameCandidate(in payload: [String: Any]) -> AgentSessionName? {
-        for key in ["session_name", "sessionName", "session_title", "sessionTitle"] {
-            if let value = payload[key] as? String, let sessionName = AgentSessionName.sanitized(value) {
+        for key in [
+            "session_name", "sessionName", "session_title", "sessionTitle",
+            "conversation_title", "conversationTitle", "title", "name",
+        ] {
+            if let value = stringValue(payload[key]), let sessionName = AgentSessionName.sanitized(value) {
                 return sessionName
             }
         }
@@ -256,9 +266,31 @@ public struct ProviderHookConfiguration: Sendable {
     }
 
     private func estimatedCostCandidate(in payload: [String: Any]) -> AgentSessionEstimatedCost? {
-        for key in ["estimated_cost", "estimatedCost", "estimated_cost_usd", "estimatedCostUsd", "cost_usd", "costUSD"] {
-            guard let value = payload[key], let decimal = decimalValue(from: value) else { continue }
-            if let cost = AgentSessionEstimatedCost(usd: decimal) { return cost }
+        for key in [
+            "estimated_cost", "estimatedCost", "estimated_cost_usd", "estimatedCostUsd",
+            "cost_usd", "costUSD", "total_cost_usd", "totalCostUsd", "cost",
+        ] {
+            guard let value = payload[key] else { continue }
+            if let nested = value as? [String: Any] {
+                for nestedKey in ["usd", "amount", "total", "value"] {
+                    if let decimal = decimalValue(from: nested[nestedKey] as Any),
+                       let cost = AgentSessionEstimatedCost(usd: decimal) {
+                        return cost
+                    }
+                }
+            }
+            if let decimal = decimalValue(from: value), let cost = AgentSessionEstimatedCost(usd: decimal) {
+                return cost
+            }
+        }
+        return nil
+    }
+
+    private func stringValue(_ value: Any?) -> String? {
+        guard let value else { return nil }
+        if let string = value as? String {
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
         }
         return nil
     }
@@ -393,15 +425,18 @@ public struct ProviderHookConfiguration: Sendable {
     }
 
     private func isReadTool(_ tool: String) -> Bool {
-        tool == "read" || tool.contains("read_file")
+        tool == "read" || tool.contains("read_file") || tool.contains("readfile")
     }
 
     private func isEditTool(_ tool: String) -> Bool {
-        ["edit", "multiedit", "write", "apply_patch"].contains(tool)
+        ["edit", "multiedit", "write", "apply_patch", "applypatch", "strreplace", "search_replace"].contains(tool)
+            || tool.contains("apply_patch")
+            || tool.contains("edit_file")
     }
 
     private func isShellTool(_ tool: String) -> Bool {
-        tool == "bash" || tool == "shell" || tool.contains("terminal")
+        tool == "bash" || tool == "shell" || tool.contains("terminal") || tool.contains("shell_command")
+            || tool == "local_shell"
     }
 
     private func isGrepTool(_ tool: String) -> Bool {

@@ -39,7 +39,7 @@ public partial class App : System.Windows.Application
         settings.SetAutonomyConfiguration(settings.GetAutonomyConfiguration());
         overlay.SetAutonomyEnabled(settings.AutonomyEnabled);
         overlay.SetAutonomyConfiguration(settings.GetAutonomyConfiguration());
-        tray = new TrayController(ChangePet, ChangeSize, Reload, ToggleAutonomy, ResetPosition, OpenDashboard, Quit);
+        tray = new TrayController(ChangePet, ChangeSize, Reload, ToggleAutonomy, TogglePetHidden, ToggleQuotaBarVisible, SetQuotaBarMode, ResetPosition, OpenDashboard, Quit);
         Reload();
         StartDashboard();
         if (!background) OpenDashboard();
@@ -58,6 +58,7 @@ public partial class App : System.Windows.Application
         else
         {
             ShowPet(selected, restorePosition: true);
+            ApplyPetVisibility();
         }
         RefreshTray(selected?.Id);
     }
@@ -67,6 +68,7 @@ public partial class App : System.Windows.Application
         var pet = pets.FirstOrDefault(candidate => candidate.Id == id);
         if (pet is null) return;
         ShowPet(pet, restorePosition: false);
+        ApplyPetVisibility();
         RefreshTray(pet.Id);
     }
 
@@ -88,6 +90,7 @@ public partial class App : System.Windows.Application
                 SettingsStore.Save(settings);
             };
             SettingsStore.Save(settings);
+            RefreshQuotaBar();
         }
         catch (Exception error)
         {
@@ -100,6 +103,7 @@ public partial class App : System.Windows.Application
     {
         settings.Width = width;
         overlay?.SetWidth(width);
+        RefreshQuotaBar();
         SettingsStore.Save(settings);
         RefreshTray(settings.SelectedPetId);
     }
@@ -110,6 +114,89 @@ public partial class App : System.Windows.Application
         overlay?.SetAutonomyEnabled(settings.AutonomyEnabled);
         SettingsStore.Save(settings);
         RefreshTray(settings.SelectedPetId);
+    }
+
+    private void TogglePetHidden()
+    {
+        settings.PetHidden = !settings.PetHidden;
+        ApplyPetVisibility();
+        SettingsStore.Save(settings);
+        RefreshTray(settings.SelectedPetId);
+    }
+
+    private void ToggleQuotaBarVisible()
+    {
+        settings.QuotaBarVisible = !settings.QuotaBarVisible;
+        RefreshQuotaBar();
+        SettingsStore.Save(settings);
+        RefreshTray(settings.SelectedPetId);
+    }
+
+    private void SetQuotaBarMode(string mode)
+    {
+        settings.QuotaBarMode = mode;
+        if (!string.Equals(mode, "off", StringComparison.OrdinalIgnoreCase))
+            settings.QuotaBarVisible = true;
+        RefreshQuotaBar();
+        SettingsStore.Save(settings);
+        RefreshTray(settings.SelectedPetId);
+    }
+
+    private void RefreshQuotaBar()
+    {
+        if (overlay is null) return;
+        var provider = settings.ClaudeEnabled ? UsageProvider.Claude
+            : settings.CodexEnabled ? UsageProvider.Codex
+            : (UsageProvider?)null;
+        var budgetSettings = provider switch
+        {
+            UsageProvider.Claude => settings.ClaudeBudget,
+            UsageProvider.Codex => settings.CodexBudget,
+            _ => new ProviderBudgetSettings(),
+        };
+        var mode = settings.QuotaBarMode?.ToLowerInvariant() switch
+        {
+            "daily" => QuotaBarMode.Daily,
+            "monthly" => QuotaBarMode.Monthly,
+            "plan" => QuotaBarMode.Plan,
+            "off" => QuotaBarMode.Off,
+            _ => QuotaBarMode.Auto,
+        };
+        var result = QuotaBarResolver.Resolve(new QuotaBarResolveInput(
+            provider,
+            settings.QuotaBarVisible,
+            mode,
+            new QuotaBarBudget(budgetSettings.DailyUSD, budgetSettings.MonthlyUSD)));
+        if (result.SeededBudget is { } seeded && provider is { } seededProvider)
+        {
+            var target = seededProvider == UsageProvider.Claude ? settings.ClaudeBudget : settings.CodexBudget;
+            target.Update(seeded.DailyUSD, seeded.MonthlyUSD);
+            SettingsStore.Save(settings);
+        }
+        overlay.SetQuotaBarSegments(result.Segments);
+    }
+
+    private void ApplyPetVisibility()
+    {
+        if (overlay is null || settings.SelectedPetId is null) return;
+        var pet = pets.FirstOrDefault(candidate => candidate.Id == settings.SelectedPetId);
+        if (pet is null) return;
+        if (settings.PetHidden)
+        {
+            if (overlay.HasLoadedPet)
+            {
+                overlay.SetPetVisible(false);
+            }
+            else
+            {
+                ShowPet(pet, restorePosition: true);
+                overlay.SetPetVisible(false);
+            }
+        }
+        else
+        {
+            ShowPet(pet, restorePosition: true);
+        }
     }
 
     private void ResetPosition()
@@ -168,6 +255,9 @@ public partial class App : System.Windows.Application
         settings.SelectedPetId,
         settings.Width,
         settings.AutonomyEnabled,
+        settings.PetHidden,
+        settings.QuotaBarVisible,
+        settings.QuotaBarMode,
         settings.GetAutonomyConfiguration(),
         settings.ClaudeBudget,
         settings.CodexBudget,
@@ -228,13 +318,37 @@ public partial class App : System.Windows.Application
     {
         if (request.ShowStatusItem == false)
             throw new DashboardApiException("unsupported_action", "The Windows tray icon cannot be hidden.", 409);
+        if (request.PetHidden is { } petHidden)
+        {
+            settings.PetHidden = petHidden;
+            ApplyPetVisibility();
+            RefreshTray(settings.SelectedPetId);
+        }
+        if (request.QuotaBarVisible is { } quotaBarVisible)
+        {
+            settings.QuotaBarVisible = quotaBarVisible;
+            RefreshQuotaBar();
+            RefreshTray(settings.SelectedPetId);
+        }
+        if (request.QuotaBarMode is { } quotaBarMode)
+        {
+            settings.QuotaBarMode = quotaBarMode;
+            if (!string.Equals(quotaBarMode, "off", StringComparison.OrdinalIgnoreCase))
+                settings.QuotaBarVisible = true;
+            RefreshQuotaBar();
+            RefreshTray(settings.SelectedPetId);
+        }
         if (request.PetsDirectory is { } petsDirectory)
         {
             ApplyPetsDirectory(petsDirectory);
         }
         if (request.Budgets is null)
         {
-            if (request.PetsDirectory is not null) SettingsStore.Save(settings);
+            if (request.PetsDirectory is not null || request.PetHidden is not null
+                || request.QuotaBarVisible is not null || request.QuotaBarMode is not null)
+            {
+                SettingsStore.Save(settings);
+            }
             return;
         }
         if (request.Budgets.Cursor is { DailyUSD: not null } or { MonthlyUSD: not null })
@@ -242,6 +356,7 @@ public partial class App : System.Windows.Application
         if (request.Budgets.Claude is { } claude) UpdateBudget(settings.ClaudeBudget, claude);
         if (request.Budgets.Codex is { } codex) UpdateBudget(settings.CodexBudget, codex);
         SettingsStore.Save(settings);
+        RefreshQuotaBar();
     }
 
     private object RemovePet(string id)
@@ -383,7 +498,15 @@ public partial class App : System.Windows.Application
     }
 
     private void RefreshTray(string? selectedId) =>
-        tray?.Update(pets, failures, selectedId, settings.Width, settings.AutonomyEnabled);
+        tray?.Update(
+            pets,
+            failures,
+            selectedId,
+            settings.Width,
+            settings.AutonomyEnabled,
+            settings.PetHidden,
+            settings.QuotaBarVisible,
+            settings.QuotaBarMode);
 
     private void Quit()
     {

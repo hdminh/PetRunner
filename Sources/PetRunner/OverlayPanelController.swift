@@ -13,7 +13,10 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
 
     private let logger = Logger(subsystem: "vn.hodinhminh.petrunner", category: "overlay")
     private let panel: NSPanel
+    private let containerView: NSView
     private let spriteView: SpriteView
+    private let quotaBarView: PetQuotaBarView
+    private var quotaBarSegments: [QuotaBarSegment] = []
     private let physics = PhysicsEngine(maximumDeltaTime: 0.05)
     private var atlas: SpriteAtlas?
     private var pet: PetDescriptor?
@@ -40,9 +43,12 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
     var frame: CGRect { panel.frame }
 
     override init() {
-        spriteView = SpriteView(frame: CGRect(x: 0, y: 0, width: 112, height: 121.33))
+        let spriteSize = CGSize(width: 112, height: 112 * SpriteAtlas.cellSize.height / SpriteAtlas.cellSize.width)
+        containerView = NSView(frame: CGRect(origin: .zero, size: spriteSize))
+        spriteView = SpriteView(frame: CGRect(origin: .zero, size: spriteSize))
+        quotaBarView = PetQuotaBarView(frame: .zero)
         panel = NSPanel(
-            contentRect: spriteView.frame,
+            contentRect: containerView.frame,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -50,10 +56,15 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         super.init()
 
         spriteView.delegate = self
-        panel.contentView = spriteView
+        containerView.wantsLayer = true
+        containerView.layer?.backgroundColor = NSColor.clear.cgColor
+        containerView.addSubview(spriteView)
+        containerView.addSubview(quotaBarView)
+        panel.contentView = containerView
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = false
+        // Soft drop shadow (same window-server treatment as the session bubble).
+        panel.hasShadow = true
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
@@ -97,6 +108,37 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         pet = nil
         motion = nil
         cancelAutonomy()
+    }
+
+    /// Shows or hides the overlay panel without unloading the current pet atlas.
+    func setVisible(_ isVisible: Bool) {
+        if isVisible {
+            guard atlas != nil else { return }
+            panel.orderFrontRegardless()
+            onFrameChanged?(panel.frame)
+        } else {
+            panel.orderOut(nil)
+        }
+    }
+
+    var isVisible: Bool { panel.isVisible }
+
+    var hasLoadedPet: Bool { atlas != nil }
+
+    /// Sprite size used for physics / floor (excludes under-feet quota bars).
+    private var spriteSize: CGSize {
+        let width = panel.frame.width
+        return CGSize(width: width, height: width * SpriteAtlas.cellSize.height / SpriteAtlas.cellSize.width)
+    }
+
+    func setQuotaBarSegments(_ segments: [QuotaBarSegment]) {
+        quotaBarSegments = segments
+        quotaBarView.setSegments(segments)
+        guard atlas != nil else { return }
+        let topLeft = CGPoint(x: panel.frame.minX, y: panel.frame.maxY)
+        applyLayout(spriteWidth: panel.frame.width, preserveTopLeft: topLeft)
+        panel.invalidateShadow()
+        onFrameChanged?(panel.frame)
     }
 
     func setWidth(_ width: CGFloat) {
@@ -265,7 +307,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         playback.advance(by: delta)
         if var currentMotion = motion {
             let bounds = bestScreen(for: panel.frame)?.visibleFrame ?? NSScreen.main?.visibleFrame ?? panel.frame
-            physics.step(&currentMotion, size: panel.frame.size, bounds: bounds, deltaTime: delta)
+            physics.step(&currentMotion, size: spriteSize, bounds: bounds, deltaTime: delta)
             panel.setFrameOrigin(currentMotion.origin)
             onFrameChanged?(panel.frame)
             if currentMotion.velocity == .zero {
@@ -379,6 +421,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         guard let atlas, let pet else { return }
         let address = recentPointerLookAddress(for: pet) ?? playback.atlasAddress
         spriteView.display(atlas.frame(at: address))
+        panel.invalidateShadow()
     }
 
     private func recentPointerLookAddress(for pet: PetDescriptor) -> AtlasAddress? {
@@ -396,7 +439,7 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
         }
         guard now - lastPointerMovementTime <= physicalPointerLookDuration else { return nil }
 
-        let center = CGPoint(x: panel.frame.midX, y: panel.frame.midY)
+        let center = CGPoint(x: panel.frame.minX + spriteSize.width / 2, y: panel.frame.minY + PetQuotaBarView.preferredHeight(forCount: quotaBarSegments.count) + spriteSize.height / 2)
         let vector = CGVector(dx: pointer.x - center.x, dy: pointer.y - center.y)
         guard let index = LookDirection.frameIndex(vector: vector) else { return nil }
         return LookDirection.atlasAddress(for: index)
@@ -404,16 +447,28 @@ final class OverlayPanelController: NSObject, SpriteViewDelegate {
 
     private func resize(to requestedWidth: CGFloat, anchorTopLeft: Bool) {
         let width = min(max(requestedWidth, 80), 224)
-        let size = CGSize(width: width, height: width * SpriteAtlas.cellSize.height / SpriteAtlas.cellSize.width)
-        let oldFrame = panel.frame
-        var origin = oldFrame.origin
-        if anchorTopLeft {
-            origin.y = oldFrame.maxY - size.height
-        }
-        let frame = CGRect(origin: origin, size: size)
-        panel.setFrame(frame, display: true)
-        spriteView.frame = CGRect(origin: .zero, size: size)
+        let preserveTopLeft = anchorTopLeft
+            ? CGPoint(x: panel.frame.minX, y: panel.frame.maxY)
+            : nil
+        applyLayout(spriteWidth: width, preserveTopLeft: preserveTopLeft)
         panel.setFrameOrigin(clampedOrigin(panel.frame.origin))
+    }
+
+    private func applyLayout(spriteWidth: CGFloat, preserveTopLeft: CGPoint?) {
+        let width = min(max(spriteWidth, 80), 224)
+        let sprite = CGSize(width: width, height: width * SpriteAtlas.cellSize.height / SpriteAtlas.cellSize.width)
+        let barHeight = PetQuotaBarView.preferredHeight(forCount: quotaBarSegments.count)
+        let total = CGSize(width: width, height: sprite.height + barHeight)
+        var origin = panel.frame.origin
+        if let preserveTopLeft {
+            origin = CGPoint(x: preserveTopLeft.x, y: preserveTopLeft.y - total.height)
+        }
+        panel.setFrame(CGRect(origin: origin, size: total), display: true)
+        containerView.frame = CGRect(origin: .zero, size: total)
+        // AppKit y=0 is bottom: bars under feet sit at the bottom of the panel.
+        quotaBarView.frame = CGRect(x: 0, y: 0, width: width, height: barHeight)
+        quotaBarView.isHidden = barHeight <= 0
+        spriteView.frame = CGRect(x: 0, y: barHeight, width: sprite.width, height: sprite.height)
     }
 
     private func defaultOrigin(for size: CGSize) -> CGPoint {

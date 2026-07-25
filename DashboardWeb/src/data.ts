@@ -1,4 +1,4 @@
-import type { ActivityStats, AppState, LiveSession, MonitorProviderOption, MonitorSettings, Provider, ProviderInfo, SessionTimelineEntry, Tokens, UsageModel, UsageProject, UsageRecord, UsageResponse, UsageSession } from "./types";
+import type { ActivityStats, AppState, LiveSession, MonitorProviderOption, MonitorSettings, Provider, ProviderInfo, ProviderQuota, RateWindow, SessionTimelineEntry, Tokens, UsageModel, UsageProject, UsageRecord, UsageResponse, UsageSession } from "./types";
 
 const asObject = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const finite = (value: unknown): number => {
@@ -83,6 +83,7 @@ export function normalizeState(value: unknown): AppState {
       costLabel: string(entry.costLabel),
       usageURL: safeURL(entry.usageURL),
       statusURL: safeURL(entry.statusURL),
+      quota: normalizeQuota(entry.quota),
     };
     return infos;
   }, {});
@@ -90,7 +91,7 @@ export function normalizeState(value: unknown): AppState {
     if (!providerInfos[name]) {
       providerInfos[name] = {
         id: name, name, enabled: true, connected: false, account: null, email: null, plan: null, organization: null,
-        source: null, status: null, updatedAt: null, todayTokens: 0, todayCost: 0, monthCost: 0, sessionCount: 0, costLabel: null,
+        source: null, status: null, updatedAt: null, todayTokens: 0, todayCost: 0, monthCost: 0, sessionCount: 0, costLabel: null, quota: null,
       };
     }
   }
@@ -129,6 +130,9 @@ export function normalizeState(value: unknown): AppState {
     settings: {
       budgets,
       showStatusItem: settings.showStatusItem === undefined ? true : Boolean(settings.showStatusItem),
+      petHidden: Boolean(settings.petHidden),
+      quotaBarVisible: settings.quotaBarVisible === undefined ? true : Boolean(settings.quotaBarVisible),
+      quotaBarMode: normalizeQuotaBarMode(settings.quotaBarMode),
       petsDirectory: string(settings.petsDirectory),
       petsDirectorySource: string(settings.petsDirectorySource),
       petsDirectoryEditable: settings.petsDirectoryEditable === undefined
@@ -197,10 +201,24 @@ export function normalizeMonitor(value: unknown): MonitorSettings {
   const visibleFields = Array.isArray(object.visibleFields)
     ? object.visibleFields.map(string).filter((field): field is string => Boolean(field))
     : ["model", "job", "sessionName", "cost"];
+  const appearanceObject = asObject(object.appearance);
+  const scaleRaw = string(appearanceObject.scale) ?? "default";
+  const fontRaw = string(appearanceObject.fontSize) ?? "md";
+  const appearanceFields = Array.isArray(appearanceObject.visibleFields)
+    ? appearanceObject.visibleFields.map(string).filter((field): field is string => Boolean(field))
+    : visibleFields;
   return {
     enabled: Boolean(object.enabled),
     provider,
-    visibleFields,
+    visibleFields: appearanceFields.length ? appearanceFields : visibleFields,
+    appearance: {
+      scale: scaleRaw === "compact" || scaleRaw === "large" ? scaleRaw : "default",
+      fontSize: fontRaw === "sm" || fontRaw === "lg" ? fontRaw : "md",
+      useProviderHeaderTint: appearanceObject.useProviderHeaderTint === undefined
+        ? true
+        : Boolean(appearanceObject.useProviderHeaderTint),
+      visibleFields: appearanceFields.length ? appearanceFields : visibleFields,
+    },
     providers: fallback,
   };
 }
@@ -525,6 +543,45 @@ export function daySpendBreakdown(series: SpendSeries, dayIndex: number): DaySpe
       percent: dailyTotal > 0 ? (amount / dailyTotal) * 100 : 0,
     }));
   return { date: day.date, rows, dailyTotal, cumulativeTotal };
+}
+
+function normalizeRateWindow(value: unknown): RateWindow | null {
+  const object = asObject(value);
+  if (object.usedPercent == null && object.remainingPercent == null) return null;
+  const usedPercent = finite(object.usedPercent);
+  return {
+    usedPercent,
+    remainingPercent: object.remainingPercent == null ? Math.max(0, 100 - usedPercent) : finite(object.remainingPercent),
+    windowMinutes: object.windowMinutes == null ? null : finite(object.windowMinutes),
+    resetsAt: string(object.resetsAt),
+    label: string(object.label),
+  };
+}
+
+function normalizeQuota(value: unknown): ProviderQuota | null {
+  if (value == null) return null;
+  const object = asObject(value);
+  const monthly = asObject(object.monthlySpend);
+  return {
+    primary: normalizeRateWindow(object.primary),
+    secondary: normalizeRateWindow(object.secondary),
+    tertiary: normalizeRateWindow(object.tertiary),
+    monthlySpend: object.monthlySpend == null ? null : {
+      usedUSD: finite(monthly.usedUSD),
+      limitUSD: monthly.limitUSD == null ? null : finite(monthly.limitUSD),
+      resetsAt: string(monthly.resetsAt),
+    },
+    source: string(object.source) ?? "unknown",
+    updatedAt: string(object.updatedAt) ?? "",
+    message: string(object.message),
+  };
+}
+
+function normalizeQuotaBarMode(value: unknown): NonNullable<AppState["settings"]>["quotaBarMode"] {
+  if (value === "daily" || value === "monthly" || value === "plan" || value === "off" || value === "auto") {
+    return value;
+  }
+  return "auto";
 }
 
 function safeURL(value: unknown): string | undefined {

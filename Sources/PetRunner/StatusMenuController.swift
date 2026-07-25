@@ -12,6 +12,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     var onConfigureMonitor: (() -> Void)?
     var onRepairMonitor: (() -> Void)?
     var onToggleAutonomy: (() -> Void)?
+    var onTogglePetHidden: (() -> Void)?
+    var onToggleQuotaBarVisible: (() -> Void)?
+    var onSetQuotaBarMode: ((QuotaBarMode) -> Void)?
     var onQuit: (() -> Void)?
 
     private var statusItem: NSStatusItem?
@@ -22,6 +25,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private var selectedWidth: CGFloat = 112
     private var monitorEnabled = false
     private var autonomyEnabled = true
+    private var petHidden = false
+    private var quotaBarVisible = true
+    private var quotaBarMode: QuotaBarMode = .auto
     /// Compact today-spend label for the Monitor-selected provider (e.g. `$15.37`).
     /// `nil` hides the cost and shows the icon alone.
     private var monitorSpendText: String?
@@ -96,7 +102,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         selectedID: String?,
         width: CGFloat,
         monitorEnabled: Bool = false,
-        autonomyEnabled: Bool = true
+        autonomyEnabled: Bool = true,
+        petHidden: Bool = false,
+        quotaBarVisible: Bool = true,
+        quotaBarMode: QuotaBarMode = .auto
     ) {
         self.pets = pets
         self.failures = failures
@@ -104,6 +113,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         selectedWidth = width
         self.monitorEnabled = monitorEnabled
         self.autonomyEnabled = autonomyEnabled
+        self.petHidden = petHidden
+        self.quotaBarVisible = quotaBarVisible
+        self.quotaBarMode = quotaBarMode
         let activeKeys = Set(pets.map(thumbnailKey(for:)))
         thumbnailCache = thumbnailCache.filter { activeKeys.contains($0.key) }
         rebuildMenu()
@@ -183,6 +195,36 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         autonomy.target = self
         autonomy.state = autonomyEnabled ? .on : .off
         menu.addItem(autonomy)
+
+        let quotaMenu = NSMenu(title: "Quota Bar")
+        let showQuota = NSMenuItem(
+            title: quotaBarVisible ? "Hide Quota Bar" : "Show Quota Bar",
+            action: #selector(toggleQuotaBarVisible),
+            keyEquivalent: ""
+        )
+        showQuota.target = self
+        quotaMenu.addItem(showQuota)
+        quotaMenu.addItem(.separator())
+        for mode in [QuotaBarMode.auto, .daily, .monthly, .plan] {
+            let entry = NSMenuItem(title: quotaBarModeTitle(mode), action: #selector(selectQuotaBarMode(_:)), keyEquivalent: "")
+            entry.target = self
+            entry.representedObject = mode.rawValue
+            entry.state = quotaBarMode == mode ? .on : .off
+            entry.isEnabled = quotaBarVisible
+            quotaMenu.addItem(entry)
+        }
+        let quotaItem = NSMenuItem(title: "Quota Bar", action: nil, keyEquivalent: "")
+        quotaItem.submenu = quotaMenu
+        menu.addItem(quotaItem)
+
+        let hidePet = NSMenuItem(
+            title: petHidden ? "Show Pet" : "Hide Pet",
+            action: #selector(togglePetHidden),
+            keyEquivalent: "h"
+        )
+        hidePet.target = self
+        hidePet.isEnabled = selectedID != nil || !pets.isEmpty
+        menu.addItem(hidePet)
 
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit PetRunner", action: #selector(quitApp), keyEquivalent: "q")
@@ -291,7 +333,23 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     @objc private func configureMonitor() { onConfigureMonitor?() }
     @objc private func repairMonitor() { onRepairMonitor?() }
     @objc private func toggleAutonomy() { onToggleAutonomy?() }
+    @objc private func togglePetHidden() { onTogglePetHidden?() }
+    @objc private func toggleQuotaBarVisible() { onToggleQuotaBarVisible?() }
+    @objc private func selectQuotaBarMode(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let mode = QuotaBarMode(rawValue: raw) else { return }
+        onSetQuotaBarMode?(mode)
+    }
     @objc private func quitApp() { onQuit?() }
+
+    private func quotaBarModeTitle(_ mode: QuotaBarMode) -> String {
+        switch mode {
+        case .auto: "Auto"
+        case .daily: "Daily Limit"
+        case .monthly: "Monthly Limit"
+        case .plan: "Plan Quota"
+        case .off: "Off"
+        }
+    }
 }
 
 private struct ThumbnailKey: Hashable {

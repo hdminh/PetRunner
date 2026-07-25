@@ -44,7 +44,18 @@ main { max-width: 1420px; margin: 0 auto; padding: 3.5rem 2rem 4rem; }.page { an
 .provider-budget > p:not(.kicker) { margin: 0 0 .85rem; max-width: 58ch; color: #95a199; font-size: .82rem; line-height: 1.45; }
 .provider-budget-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; margin-bottom: .85rem; }
 .provider-budget-fields label { display: grid; gap: .3rem; color: #94a097; font-size: .7rem; font-weight: 700; }
+.provider-quota { margin-top: 1.15rem; padding-top: 1rem; border-top: 1px solid #29322b; }
+.provider-quota h2 { margin: .3rem 0 .35rem; font-size: 1.05rem; letter-spacing: -.03em; }
+.provider-quota .muted { margin: 0; color: #95a199; font-size: .82rem; line-height: 1.45; }
+.quota-meters { display: grid; gap: .75rem; margin-top: .75rem; }
+.quota-meter { display: grid; gap: .35rem; }
+.quota-meter-head { display: flex; justify-content: space-between; gap: .75rem; align-items: baseline; }
+.quota-meter-head strong { font-size: .82rem; }
+.quota-meter-head span, .quota-meter small { color: #95a199; font-size: .72rem; }
+.quota-meter-track { height: 8px; border-radius: 999px; background: #243028; overflow: hidden; }
+.quota-meter-track > i { display: block; height: 100%; background: linear-gradient(90deg, #8fd46a, #f0c35a 70%, #e27d60); }
 .pets-page { display: flex; flex-direction: column; gap: .85rem; }
+.monitor-page { display: flex; flex-direction: column; gap: .85rem; }
 .pets-layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: .85rem; align-items: stretch; }
 .pets-sidebar { display: flex; flex-direction: column; gap: .85rem; align-self: stretch; height: 0; min-height: 100%; overflow: hidden; padding: .85rem; border: 1px solid #2b332d; border-radius: .9rem; background: linear-gradient(145deg, rgba(32, 38, 33, .9), rgba(22, 26, 23, .9)); }
 .pets-sidebar-head { display: flex; flex-shrink: 0; justify-content: space-between; align-items: end; gap: .75rem; }

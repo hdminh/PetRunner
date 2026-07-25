@@ -12,6 +12,9 @@ internal sealed class AppSettings
     public double? Top { get; set; }
     public string? PetsDirectory { get; set; }
     public bool AutonomyEnabled { get; set; } = true;
+    public bool PetHidden { get; set; }
+    public bool QuotaBarVisible { get; set; } = true;
+    public string QuotaBarMode { get; set; } = "auto";
     public double AutonomyMinimumWait { get; set; } = AutonomyPolicy.MinimumWait;
     public double AutonomyMaximumWait { get; set; } = AutonomyPolicy.MaximumWait;
     public AutonomousActionKind[] EnabledAutonomousActions { get; set; } = Enum.GetValues<AutonomousActionKind>();
