@@ -5,5 +5,6 @@ export default defineConfig({
   root: "DashboardWeb",
   cacheDir: "../node_modules/.vitest-dashboard",
   plugins: [react()],
-  test: { environment: "jsdom", include: ["src/**/*.test.{ts,tsx}"] },
+  // Pure unit tests; jsdom hangs worker startup in some local Node installs.
+  test: { environment: "node", include: ["src/**/*.test.{ts,tsx}"] },
 });

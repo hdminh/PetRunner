@@ -3,6 +3,7 @@ import Foundation
 import SQLite3
 import Testing
 
+@Suite(.serialized)
 struct UsageTests {
     @Test func storeDeduplicatesSourceKeysAndAggregatesSessions() throws {
         let root = try temporaryDirectory()
@@ -145,7 +146,7 @@ struct UsageTests {
         let sonnet5 = all.first { $0.id == "claude-sonnet-5" }
         #expect(sonnet5?.inputPerMillionUSD == 2)
         #expect(sonnet5?.outputPerMillionUSD == 10)
-        #expect(sonnet5?.cacheReadPerMillionUSD == 0.2)
+        #expect(approximatelyEqual(sonnet5?.cacheReadPerMillionUSD, 0.2))
         #expect(sonnet5?.cacheWritePerMillionUSD == 2.5)
 
         let sonnet = all.first { $0.id == "claude-sonnet-4-5" }
