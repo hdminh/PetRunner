@@ -6,9 +6,9 @@ It reads `${CODEX_HOME:-~/.codex}/pets` and never starts, embeds, or connects
 to Codex.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/hero.png" alt="PetRunner desktop pet with Agent Monitor bubble and quota HP bars" width="360" />
+  <img src="https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/hero.png" alt="PetRunner desktop pet with Agent Monitor bubble and quota HP bars" height="420" />
   &nbsp;&nbsp;
-  <img src="https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/hero-collapsed.png" alt="PetRunner with collapsed heart quota meter" width="360" />
+  <img src="https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/hero-collapsed.png" alt="PetRunner with collapsed heart quota meter" height="420" />
 </p>
 
 Source: [github.com/hdminh/PetRunner](https://github.com/hdminh/PetRunner)
