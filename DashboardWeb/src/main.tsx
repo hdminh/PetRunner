@@ -297,7 +297,7 @@ function ActivityPanel({ activity, error }: { activity: ActivityStats; error: st
   if (error) {
     return <Card className="activity-card"><div className="section-head"><div><h2>Activity</h2><p className="activity-subtitle">Lifetime stats and when you usually code</p></div></div><Empty>Activity error: {error}</Empty></Card>;
   }
-  const streak = `${activity.currentStreak} / ${activity.longestStreak} d`;
+  const streak = `${activity.currentStreak} / ${activity.longestStreak} D`;
   const peak = activity.peakHour < 0 ? "—" : formatPeakHour(activity.peakHour);
   return <Card className="activity-card">
     <div className="section-head activity-head">

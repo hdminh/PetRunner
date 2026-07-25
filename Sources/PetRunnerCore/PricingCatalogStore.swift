@@ -237,7 +237,7 @@ public final class PricingCatalogStore: @unchecked Sendable {
         var codex: [String: OverlayRates]
     }
 
-    static func parseModelsDev(_ data: Data) throws -> ProviderBuckets {
+    private static func parseModelsDev(_ data: Data) throws -> ProviderBuckets {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw RefreshError.invalidResponse
         }
@@ -265,7 +265,7 @@ public final class PricingCatalogStore: @unchecked Sendable {
         return ProviderBuckets(claude: claude, codex: codex)
     }
 
-    static func parseLiteLLM(_ data: Data) throws -> ProviderBuckets {
+    private static func parseLiteLLM(_ data: Data) throws -> ProviderBuckets {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw RefreshError.invalidResponse
         }
