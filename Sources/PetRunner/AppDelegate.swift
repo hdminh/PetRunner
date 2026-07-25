@@ -52,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.onOpenDashboard = { [weak self] in self?.openDashboard() }
         menu.onToggleMonitor = { [weak self] in self?.toggleMonitor() }
         menu.onConfigureMonitor = { [weak self] in self?.presentMonitorSetup() }
+        menu.onRefreshMonitorBubble = { [weak self] in self?.resetMonitorSessions() }
         menu.onRepairMonitor = { [weak self] in self?.repairMonitorHooks() }
         menu.onToggleAutonomy = { [weak self] in self?.toggleAutonomy() }
         menu.onTogglePetHidden = { [weak self] in self?.togglePetHidden() }
@@ -81,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         quickActions.onImportPet = { [weak self] in self?.openDashboard() }
         quickActions.onToggleAutonomy = { [weak self] in self?.toggleAutonomy() }
         quickActions.onToggleMonitor = { [weak self] in self?.toggleMonitor() }
+        quickActions.onRefreshMonitorBubble = { [weak self] in self?.resetMonitorSessions() }
         quickActions.onTogglePetHidden = { [weak self] in self?.togglePetHidden() }
         quickActions.onToggleQuotaBarVisible = { [weak self] in self?.toggleQuotaBarVisible() }
         quickActions.onSetQuotaBarMode = { [weak self] mode in self?.setQuotaBarMode(mode) }
