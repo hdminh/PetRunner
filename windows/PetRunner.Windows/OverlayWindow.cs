@@ -11,6 +11,7 @@ using System.Windows.Threading;
 using Microsoft.Win32;
 using PetRunner.Core;
 using Forms = System.Windows.Forms;
+using Brush = System.Windows.Media.Brush;
 
 namespace PetRunner.Windows;
 
