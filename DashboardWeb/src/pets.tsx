@@ -146,6 +146,20 @@ export function PetsView({
     }
   };
 
+  const setPetHidden = async (petHidden: boolean) => {
+    setBusy("hidden");
+    setMessage(null);
+    try {
+      await api.put("settings", { petHidden });
+      await onReload();
+      setMessage(petHidden ? "Pet hidden from the desktop." : "Pet is visible on the desktop.");
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Could not update pet visibility.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const resetPosition = async () => {
     setBusy("reset");
     setMessage(null);
@@ -382,6 +396,21 @@ export function PetsView({
               </label>
             </div>
           ) : null}
+
+          <div className="pets-settings-group">
+            <p className="kicker">Desktop</p>
+            <label className="toggle pets-status-toggle">
+              <span>{state.settings?.petHidden ? "Hidden" : "Visible"}</span>
+              <input
+                type="checkbox"
+                checked={!state.settings?.petHidden}
+                onChange={(event) => void setPetHidden(!event.target.checked)}
+                disabled={busy === "hidden" || !selectedID}
+                aria-label="Show pet on desktop"
+              />
+              <i aria-hidden="true" />
+            </label>
+          </div>
 
           <div className="pets-settings-group">
             <p className="kicker">Position</p>

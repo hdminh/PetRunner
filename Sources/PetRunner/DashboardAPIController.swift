@@ -18,6 +18,7 @@ struct DashboardMonitorState {
     let enabled: Bool
     let provider: AgentProvider?
     let detections: [ProviderDetection]
+    let appearance: MonitorBubbleAppearance
 }
 
 @MainActor
@@ -25,8 +26,12 @@ final class DashboardAPIController {
     private let historyStore: () -> AgentSessionHistoryStore?
     private let historyError: () -> String?
     private let usageState: () -> UsageSnapshot?
+    private let quotaState: () -> [UsageProvider: ProviderQuotaSnapshot]
     private let petState: () -> DashboardPetState
     private let showsStatusItem: () -> Bool
+    private let petHidden: () -> Bool
+    private let quotaBarVisible: () -> Bool
+    private let quotaBarMode: () -> QuotaBarMode
     private let budgetConfigurations: () -> [UsageProvider: ProviderBudgetConfiguration]
     private let isProviderEnabled: (UsageProvider) -> Bool
     private let onSelectPet: (String) -> Void
@@ -34,8 +39,11 @@ final class DashboardAPIController {
     private let onResetPosition: () -> Void
     private let onRemovePet: (String) throws -> Void
     private let onSetAutonomy: (Bool, AutonomyConfiguration) -> Void
-    private let onRefreshUsage: () -> Void
+    private let onRefreshUsage: (_ allowClaudeKeychainPrompt: Bool) -> Void
     private let onSetStatusItemVisible: (Bool) -> Void
+    private let onSetPetHidden: (Bool) -> Void
+    private let onSetQuotaBarVisible: (Bool) -> Void
+    private let onSetQuotaBarMode: (QuotaBarMode) -> Void
     private let onImportPet: () -> Void
     private let onChoosePetsDirectory: () -> Void
     private let onSetPetsDirectory: (String) throws -> Void
@@ -45,13 +53,18 @@ final class DashboardAPIController {
     private let monitorState: () -> DashboardMonitorState
     private let onSetMonitor: (Bool, AgentProvider?) throws -> Void
     private let onResetMonitor: () -> Void
+    private let onSetMonitorAppearance: (MonitorBubbleAppearance) -> Void
 
     init(
         historyStore: @escaping () -> AgentSessionHistoryStore?,
         historyError: @escaping () -> String?,
         usageState: @escaping () -> UsageSnapshot?,
+        quotaState: @escaping () -> [UsageProvider: ProviderQuotaSnapshot] = { [:] },
         petState: @escaping () -> DashboardPetState,
         showsStatusItem: @escaping () -> Bool,
+        petHidden: @escaping () -> Bool = { false },
+        quotaBarVisible: @escaping () -> Bool = { true },
+        quotaBarMode: @escaping () -> QuotaBarMode = { .auto },
         budgetConfigurations: @escaping () -> [UsageProvider: ProviderBudgetConfiguration],
         isProviderEnabled: @escaping (UsageProvider) -> Bool = { _ in true },
         onSelectPet: @escaping (String) -> Void,
@@ -59,8 +72,11 @@ final class DashboardAPIController {
         onResetPosition: @escaping () -> Void,
         onRemovePet: @escaping (String) throws -> Void,
         onSetAutonomy: @escaping (Bool, AutonomyConfiguration) -> Void,
-        onRefreshUsage: @escaping () -> Void,
+        onRefreshUsage: @escaping (_ allowClaudeKeychainPrompt: Bool) -> Void,
         onSetStatusItemVisible: @escaping (Bool) -> Void,
+        onSetPetHidden: @escaping (Bool) -> Void = { _ in },
+        onSetQuotaBarVisible: @escaping (Bool) -> Void = { _ in },
+        onSetQuotaBarMode: @escaping (QuotaBarMode) -> Void = { _ in },
         onImportPet: @escaping () -> Void,
         onChoosePetsDirectory: @escaping () -> Void,
         onSetPetsDirectory: @escaping (String) throws -> Void,
@@ -71,17 +87,23 @@ final class DashboardAPIController {
             DashboardMonitorState(
                 enabled: false,
                 provider: nil,
-                detections: AgentProvider.allCases.map { ProviderDetection(provider: $0, isDetected: false) }
+                detections: AgentProvider.allCases.map { ProviderDetection(provider: $0, isDetected: false) },
+                appearance: .default
             )
         },
         onSetMonitor: @escaping (Bool, AgentProvider?) throws -> Void = { _, _ in },
-        onResetMonitor: @escaping () -> Void = {}
+        onResetMonitor: @escaping () -> Void = {},
+        onSetMonitorAppearance: @escaping (MonitorBubbleAppearance) -> Void = { _ in }
     ) {
         self.historyStore = historyStore
         self.historyError = historyError
         self.usageState = usageState
+        self.quotaState = quotaState
         self.petState = petState
         self.showsStatusItem = showsStatusItem
+        self.petHidden = petHidden
+        self.quotaBarVisible = quotaBarVisible
+        self.quotaBarMode = quotaBarMode
         self.budgetConfigurations = budgetConfigurations
         self.isProviderEnabled = isProviderEnabled
         self.onSelectPet = onSelectPet
@@ -91,6 +113,9 @@ final class DashboardAPIController {
         self.onSetAutonomy = onSetAutonomy
         self.onRefreshUsage = onRefreshUsage
         self.onSetStatusItemVisible = onSetStatusItemVisible
+        self.onSetPetHidden = onSetPetHidden
+        self.onSetQuotaBarVisible = onSetQuotaBarVisible
+        self.onSetQuotaBarMode = onSetQuotaBarMode
         self.onImportPet = onImportPet
         self.onChoosePetsDirectory = onChoosePetsDirectory
         self.onSetPetsDirectory = onSetPetsDirectory
@@ -100,6 +125,7 @@ final class DashboardAPIController {
         self.monitorState = monitorState
         self.onSetMonitor = onSetMonitor
         self.onResetMonitor = onResetMonitor
+        self.onSetMonitorAppearance = onSetMonitorAppearance
     }
 
     func response(for request: DashboardHTTPRequest) -> DashboardHTTPResponse {
@@ -145,7 +171,7 @@ final class DashboardAPIController {
         case ("DELETE", let path) where path.hasPrefix("/pets/"):
             return removePet(path: path)
         case ("POST", "/refresh"), ("POST", "/usage/refresh"):
-            onRefreshUsage()
+            onRefreshUsage(true)
             return .json(status: 202, object: ["ok": true])
         case ("PUT", "/pet"):
             return updatePet(body: request.body)
@@ -234,6 +260,9 @@ final class DashboardAPIController {
             "settings": [
                 "budgets": budgets,
                 "showStatusItem": showsStatusItem(),
+                "petHidden": petHidden(),
+                "quotaBarVisible": quotaBarVisible(),
+                "quotaBarMode": quotaBarMode().rawValue,
                 "petsDirectory": pets.petsDirectory,
                 "petsDirectorySource": pets.petsDirectorySource,
                 "petsDirectoryEditable": pets.petsDirectoryEditable
@@ -252,7 +281,8 @@ final class DashboardAPIController {
             if result.changed {
                 // New rates change `BundledPricing.version` / parser revision, so
                 // the next usage scan rebuilds Claude/Codex costs from tokens.
-                onRefreshUsage()
+                // Keep this silent — refreshing prices must not prompt Keychain.
+                onRefreshUsage(false)
             }
             return pricingCatalogResponse(
                 query: query,
@@ -360,7 +390,7 @@ final class DashboardAPIController {
             } else {
                 connected = account.connected
             }
-            return [
+            var payload: [String: Any] = [
                 "id": provider.rawValue,
                 "name": provider.displayName,
                 "enabled": enabled,
@@ -381,7 +411,42 @@ final class DashboardAPIController {
                 "usageURL": links.usageURL.absoluteString,
                 "statusURL": links.statusURL.absoluteString
             ]
+            if let quota = quotaState()[provider] {
+                payload["quota"] = quotaJSON(quota)
+            }
+            return payload
         }
+    }
+
+    private func quotaJSON(_ quota: ProviderQuotaSnapshot) -> [String: Any] {
+        func windowJSON(_ window: RateWindow?) -> Any {
+            guard let window else { return NSNull() }
+            return [
+                "usedPercent": window.usedPercent,
+                "remainingPercent": window.remainingPercent,
+                "windowMinutes": window.windowMinutes as Any? ?? NSNull(),
+                "resetsAt": window.resetsAt.map(Self.isoFormatter.string) as Any? ?? NSNull(),
+                "label": window.label as Any? ?? NSNull()
+            ]
+        }
+        var payload: [String: Any] = [
+            "primary": windowJSON(quota.primary),
+            "secondary": windowJSON(quota.secondary),
+            "tertiary": windowJSON(quota.tertiary),
+            "source": quota.source,
+            "updatedAt": Self.isoFormatter.string(from: quota.updatedAt),
+            "message": quota.message as Any? ?? NSNull()
+        ]
+        if let monthly = quota.monthlySpend {
+            payload["monthlySpend"] = [
+                "usedUSD": monthly.usedUSD,
+                "limitUSD": monthly.limitUSD as Any? ?? NSNull(),
+                "resetsAt": monthly.resetsAt.map(Self.isoFormatter.string) as Any? ?? NSNull()
+            ]
+        } else {
+            payload["monthlySpend"] = NSNull()
+        }
+        return payload
     }
 
     private func usageResponse(query: [String: String]) -> DashboardHTTPResponse {
@@ -676,6 +741,15 @@ final class DashboardAPIController {
         if let showStatusItem = object["showStatusItem"] as? Bool {
             onSetStatusItemVisible(showStatusItem)
         }
+        if let hidden = object["petHidden"] as? Bool {
+            onSetPetHidden(hidden)
+        }
+        if let visible = object["quotaBarVisible"] as? Bool {
+            onSetQuotaBarVisible(visible)
+        }
+        if let rawMode = object["quotaBarMode"] as? String, let mode = QuotaBarMode(rawValue: rawMode) {
+            onSetQuotaBarMode(mode)
+        }
         if let petsDirectory = object["petsDirectory"] as? String {
             do {
                 try onSetPetsDirectory(petsDirectory)
@@ -795,10 +869,17 @@ final class DashboardAPIController {
         let state = monitorState()
         let home = FileManager.default.homeDirectoryForCurrentUser
         let detections = Dictionary(uniqueKeysWithValues: state.detections.map { ($0.provider, $0.isDetected) })
+        let appearance = state.appearance
         return [
             "enabled": state.enabled,
             "provider": state.provider?.rawValue as Any? ?? NSNull(),
-            "visibleFields": MonitorBubbleField.allCases.map(\.rawValue),
+            "visibleFields": appearance.visibleFields.map(\.rawValue),
+            "appearance": [
+                "scale": appearance.scale.rawValue,
+                "fontSize": appearance.fontSize.rawValue,
+                "useProviderHeaderTint": appearance.useProviderHeaderTint,
+                "visibleFields": appearance.visibleFields.map(\.rawValue)
+            ],
             "providers": AgentProvider.allCases.map { provider -> [String: Any] in
                 let configuration = ProviderHookConfiguration(provider: provider)
                 let color = provider.headerColor
@@ -819,7 +900,58 @@ final class DashboardAPIController {
     }
 
     private func updateMonitor(body: Data) -> DashboardHTTPResponse {
-        guard let object = jsonObject(body), let enabled = object["enabled"] as? Bool else {
+        guard let object = jsonObject(body) else { return invalidJSON() }
+
+        var appearance = monitorState().appearance
+        var appearanceChanged = false
+        if let scaleRaw = object["scale"] as? String, let scale = MonitorBubbleScale(rawValue: scaleRaw) {
+            appearance.scale = scale
+            appearanceChanged = true
+        }
+        if let fontRaw = object["fontSize"] as? String, let fontSize = MonitorBubbleFontSize(rawValue: fontRaw) {
+            appearance.fontSize = fontSize
+            appearanceChanged = true
+        }
+        if let tint = object["useProviderHeaderTint"] as? Bool {
+            appearance.useProviderHeaderTint = tint
+            appearanceChanged = true
+        }
+        if let fields = object["visibleFields"] as? [String] {
+            let parsed = fields.compactMap(MonitorBubbleField.init(rawValue:))
+            if !parsed.isEmpty {
+                appearance.visibleFields = parsed
+                appearanceChanged = true
+            }
+        }
+        if let appearanceObject = object["appearance"] as? [String: Any] {
+            if let scaleRaw = appearanceObject["scale"] as? String, let scale = MonitorBubbleScale(rawValue: scaleRaw) {
+                appearance.scale = scale
+                appearanceChanged = true
+            }
+            if let fontRaw = appearanceObject["fontSize"] as? String, let fontSize = MonitorBubbleFontSize(rawValue: fontRaw) {
+                appearance.fontSize = fontSize
+                appearanceChanged = true
+            }
+            if let tint = appearanceObject["useProviderHeaderTint"] as? Bool {
+                appearance.useProviderHeaderTint = tint
+                appearanceChanged = true
+            }
+            if let fields = appearanceObject["visibleFields"] as? [String] {
+                let parsed = fields.compactMap(MonitorBubbleField.init(rawValue:))
+                if !parsed.isEmpty {
+                    appearance.visibleFields = parsed
+                    appearanceChanged = true
+                }
+            }
+        }
+        if appearanceChanged {
+            onSetMonitorAppearance(appearance)
+        }
+
+        guard object["enabled"] != nil else {
+            return .json(object: monitorJSON().merging(["ok": true]) { _, new in new })
+        }
+        guard let enabled = object["enabled"] as? Bool else {
             return .error(status: 400, code: "invalid_monitor", message: "Expected { \"enabled\": true|false, \"provider\"?: \"claude\"|\"codex\"|\"cursor\" }.")
         }
         let provider: AgentProvider?

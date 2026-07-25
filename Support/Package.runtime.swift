@@ -10,6 +10,13 @@ let package = Package(
     ],
     targets: [
         .target(name: "PetRunnerCore", linkerSettings: [.linkedLibrary("sqlite3")]),
-        .executableTarget(name: "PetRunner", dependencies: ["PetRunnerCore"]),
+        .executableTarget(
+            name: "PetRunner",
+            dependencies: ["PetRunnerCore"],
+            linkerSettings: [
+                .linkedLibrary("sqlite3"),
+                .linkedFramework("LocalAuthentication"),
+            ]
+        ),
     ]
 )

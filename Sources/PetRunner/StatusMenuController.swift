@@ -10,8 +10,12 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     var onOpenDashboard: (() -> Void)?
     var onToggleMonitor: (() -> Void)?
     var onConfigureMonitor: (() -> Void)?
+    var onRefreshMonitorBubble: (() -> Void)?
     var onRepairMonitor: (() -> Void)?
     var onToggleAutonomy: (() -> Void)?
+    var onTogglePetHidden: (() -> Void)?
+    var onToggleQuotaBarVisible: (() -> Void)?
+    var onSetQuotaBarMode: ((QuotaBarMode) -> Void)?
     var onQuit: (() -> Void)?
 
     private var statusItem: NSStatusItem?
@@ -22,6 +26,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private var selectedWidth: CGFloat = 112
     private var monitorEnabled = false
     private var autonomyEnabled = true
+    private var petHidden = false
+    private var quotaBarVisible = true
+    private var quotaBarMode: QuotaBarMode = .auto
     /// Compact today-spend label for the Monitor-selected provider (e.g. `$15.37`).
     /// `nil` hides the cost and shows the icon alone.
     private var monitorSpendText: String?
@@ -96,7 +103,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         selectedID: String?,
         width: CGFloat,
         monitorEnabled: Bool = false,
-        autonomyEnabled: Bool = true
+        autonomyEnabled: Bool = true,
+        petHidden: Bool = false,
+        quotaBarVisible: Bool = true,
+        quotaBarMode: QuotaBarMode = .auto
     ) {
         self.pets = pets
         self.failures = failures
@@ -104,6 +114,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         selectedWidth = width
         self.monitorEnabled = monitorEnabled
         self.autonomyEnabled = autonomyEnabled
+        self.petHidden = petHidden
+        self.quotaBarVisible = quotaBarVisible
+        self.quotaBarMode = quotaBarMode
         let activeKeys = Set(pets.map(thumbnailKey(for:)))
         thumbnailCache = thumbnailCache.filter { activeKeys.contains($0.key) }
         rebuildMenu()
@@ -118,9 +131,23 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(heading)
         menu.addItem(.separator())
 
-        let changePetItem = NSMenuItem(title: "Change Pet", action: nil, keyEquivalent: "")
-        changePetItem.submenu = makePetSubmenu()
-        menu.addItem(changePetItem)
+        let petItem = NSMenuItem(title: "Pet", action: nil, keyEquivalent: "")
+        petItem.submenu = makePetSubmenu()
+        menu.addItem(petItem)
+
+        let autonomy = NSMenuItem(title: "Autonomous Pet", action: #selector(toggleAutonomy), keyEquivalent: "")
+        autonomy.target = self
+        autonomy.state = autonomyEnabled ? .on : .off
+        menu.addItem(autonomy)
+
+        let hidePet = NSMenuItem(
+            title: petHidden ? "Show Pet" : "Hide Pet",
+            action: #selector(togglePetHidden),
+            keyEquivalent: "h"
+        )
+        hidePet.target = self
+        hidePet.isEnabled = selectedID != nil || !pets.isEmpty
+        menu.addItem(hidePet)
 
         let sizeMenu = NSMenu(title: "Size")
         for (title, width) in [
@@ -143,10 +170,6 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         reload.target = self
         menu.addItem(reload)
 
-        let dashboard = NSMenuItem(title: "Open Dashboard…", action: #selector(openDashboard), keyEquivalent: "d")
-        dashboard.target = self
-        menu.addItem(dashboard)
-
         if !failures.isEmpty {
             let errorMenu = NSMenu(title: "Unavailable Pets")
             for failure in failures {
@@ -161,6 +184,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
+        let dashboard = NSMenuItem(title: "Open Dashboard…", action: #selector(openDashboard), keyEquivalent: "d")
+        dashboard.target = self
+        menu.addItem(dashboard)
+
+        menu.addItem(.separator())
         let monitorMenu = NSMenu(title: "Agent Monitor")
         let monitor = NSMenuItem(title: "Enable Agent Monitor", action: #selector(toggleMonitor), keyEquivalent: "")
         monitor.target = self
@@ -170,6 +198,13 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             let configure = NSMenuItem(title: "Configure Monitor…", action: #selector(configureMonitor), keyEquivalent: "")
             configure.target = self
             monitorMenu.addItem(configure)
+            let refreshBubble = NSMenuItem(
+                title: "Reset Monitor Bubble",
+                action: #selector(refreshMonitorBubble),
+                keyEquivalent: ""
+            )
+            refreshBubble.target = self
+            monitorMenu.addItem(refreshBubble)
             monitorMenu.addItem(.separator())
             let repair = NSMenuItem(title: "Repair Hook Configuration…", action: #selector(repairMonitor), keyEquivalent: "")
             repair.target = self
@@ -179,10 +214,26 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         monitorItem.submenu = monitorMenu
         menu.addItem(monitorItem)
 
-        let autonomy = NSMenuItem(title: "Autonomous Pet", action: #selector(toggleAutonomy), keyEquivalent: "")
-        autonomy.target = self
-        autonomy.state = autonomyEnabled ? .on : .off
-        menu.addItem(autonomy)
+        let quotaMenu = NSMenu(title: "Quota Bar")
+        let showQuota = NSMenuItem(
+            title: quotaBarVisible ? "Hide Quota Bar" : "Show Quota Bar",
+            action: #selector(toggleQuotaBarVisible),
+            keyEquivalent: ""
+        )
+        showQuota.target = self
+        quotaMenu.addItem(showQuota)
+        quotaMenu.addItem(.separator())
+        for mode in [QuotaBarMode.auto, .daily, .monthly, .plan] {
+            let entry = NSMenuItem(title: quotaBarModeTitle(mode), action: #selector(selectQuotaBarMode(_:)), keyEquivalent: "")
+            entry.target = self
+            entry.representedObject = mode.rawValue
+            entry.state = quotaBarMode == mode ? .on : .off
+            entry.isEnabled = quotaBarVisible
+            quotaMenu.addItem(entry)
+        }
+        let quotaItem = NSMenuItem(title: "Quota Bar", action: nil, keyEquivalent: "")
+        quotaItem.submenu = quotaMenu
+        menu.addItem(quotaItem)
 
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit PetRunner", action: #selector(quitApp), keyEquivalent: "q")
@@ -192,40 +243,40 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     private func makePetSubmenu() -> NSMenu {
-        let submenu = NSMenu(title: "Change Pet")
+        let submenu = NSMenu(title: "Pet")
         submenu.delegate = self
         petSubmenu = submenu
 
-        guard !pets.isEmpty else {
+        if pets.isEmpty {
             previewView = nil
             let empty = NSMenuItem(title: "No valid pets found", action: nil, keyEquivalent: "")
             empty.isEnabled = false
             submenu.addItem(empty)
-            return submenu
-        }
+        } else {
+            let initialPet = pets.first(where: { $0.id == selectedID }) ?? pets[0]
+            let preview = PetPreviewMenuView(frame: CGRect(x: 0, y: 0, width: 260, height: 88))
+            preview.update(pet: initialPet, image: thumbnail(for: initialPet))
+            previewView = preview
+            let previewItem = NSMenuItem()
+            previewItem.view = preview
+            previewItem.isEnabled = false
+            submenu.addItem(previewItem)
+            submenu.addItem(.separator())
 
-        let initialPet = pets.first(where: { $0.id == selectedID }) ?? pets[0]
-        let preview = PetPreviewMenuView(frame: CGRect(x: 0, y: 0, width: 260, height: 88))
-        preview.update(pet: initialPet, image: thumbnail(for: initialPet))
-        previewView = preview
-        let previewItem = NSMenuItem()
-        previewItem.view = preview
-        previewItem.isEnabled = false
-        submenu.addItem(previewItem)
-        submenu.addItem(.separator())
-
-        for pet in pets {
-            let item = NSMenuItem(title: pet.displayName, action: #selector(selectPet(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = pet.id
-            item.state = pet.id == selectedID ? .on : .off
-            item.toolTip = pet.description
-            if let image = thumbnail(for: pet)?.copy() as? NSImage {
-                image.size = CGSize(width: 24, height: 26)
-                item.image = image
+            for pet in pets {
+                let item = NSMenuItem(title: pet.displayName, action: #selector(selectPet(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = pet.id
+                item.state = pet.id == selectedID ? .on : .off
+                item.toolTip = pet.description
+                if let image = thumbnail(for: pet)?.copy() as? NSImage {
+                    image.size = CGSize(width: 24, height: 26)
+                    item.image = image
+                }
+                submenu.addItem(item)
             }
-            submenu.addItem(item)
         }
+
         return submenu
     }
 
@@ -289,9 +340,26 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     @objc private func openDashboard() { onOpenDashboard?() }
     @objc private func toggleMonitor() { onToggleMonitor?() }
     @objc private func configureMonitor() { onConfigureMonitor?() }
+    @objc private func refreshMonitorBubble() { onRefreshMonitorBubble?() }
     @objc private func repairMonitor() { onRepairMonitor?() }
     @objc private func toggleAutonomy() { onToggleAutonomy?() }
+    @objc private func togglePetHidden() { onTogglePetHidden?() }
+    @objc private func toggleQuotaBarVisible() { onToggleQuotaBarVisible?() }
+    @objc private func selectQuotaBarMode(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let mode = QuotaBarMode(rawValue: raw) else { return }
+        onSetQuotaBarMode?(mode)
+    }
     @objc private func quitApp() { onQuit?() }
+
+    private func quotaBarModeTitle(_ mode: QuotaBarMode) -> String {
+        switch mode {
+        case .auto: "Auto"
+        case .daily: "Daily Limit"
+        case .monthly: "Monthly Limit"
+        case .plan: "Plan Quota"
+        case .off: "Off"
+        }
+    }
 }
 
 private struct ThumbnailKey: Hashable {

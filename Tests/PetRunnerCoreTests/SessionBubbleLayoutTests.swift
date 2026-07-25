@@ -83,6 +83,45 @@ struct SessionBubbleLayoutTests {
         #expect(content.modelTitle == "GPT-5.2-CODEX")
         #expect(content.primaryText == "Updating the monitor bubble")
         #expect(content.detailRows == ["Monitor redesign", "$0.25"])
+        #expect(content.isSubagent == false)
+    }
+
+    @Test func bubbleContentMarksSubagentEntries() {
+        let entry = AgentSessionSnapshot(
+            key: AgentSessionKey(provider: .claude, sessionID: "root", scope: .subagent(agentID: "child")),
+            status: .working,
+            activity: AgentActivity.sanitized("Reading App.swift"),
+            agentType: AgentSubagentType.sanitized("Explore")
+        )
+        let content = SessionBubbleContent(entry: entry, visibleFields: [.job])
+
+        #expect(content.isSubagent)
+        #expect(content.detailRows == ["SUB · Explore"])
+        #expect(content.primaryText == "Reading App.swift")
+    }
+
+    @Test func bubbleContentHonorsVisibleFields() {
+        let entry = AgentSessionSnapshot(
+            key: AgentSessionKey(provider: .codex, sessionID: "session"),
+            status: .working,
+            model: AgentSessionModel.sanitized("gpt"),
+            activity: AgentActivity.sanitized("Editing file"),
+            sessionName: AgentSessionName.sanitized("Session"),
+            estimatedCost: AgentSessionEstimatedCost(usd: Decimal(string: "0.10")!)
+        )
+        let content = SessionBubbleContent(entry: entry, visibleFields: [.model, .cost])
+
+        #expect(content.modelTitle == "GPT")
+        #expect(content.primaryText == entry.displayText)
+        #expect(content.detailRows == ["$0.10"])
+    }
+
+    @Test func scaledLayoutGrowsWithScaleFactor() {
+        let base = SessionBubbleLayout(sessionCount: 1, detailLineCount: 2, isCollapsed: false, scale: 1)
+        let large = SessionBubbleLayout(sessionCount: 1, detailLineCount: 2, isCollapsed: false, scale: 1.2)
+
+        #expect(large.panelWidth == base.panelWidth * 1.2)
+        #expect(large.bubbleHeight == base.bubbleHeight * 1.2)
     }
 
     @Test func bubbleContentFallsBackToStatusWhenJobIsHidden() {

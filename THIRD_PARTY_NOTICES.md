@@ -2,10 +2,12 @@
 
 ## CodexBar
 
-PetRunner's local Claude/Codex pricing and JSONL accounting behavior, and its
-Cursor.app local-auth session fallback, are derived from the relevant
-components of [steipete/CodexBar](https://github.com/steipete/CodexBar),
-licensed under the MIT License.
+PetRunner's local Claude/Codex pricing and JSONL accounting behavior, its
+Cursor.app local-auth session fallback, and its Claude/Codex/Cursor plan-quota
+meter parsing (OAuth usage, ChatGPT wham/usage, Cursor usage-summary) are
+derived from the relevant components of
+[steipete/CodexBar](https://github.com/steipete/CodexBar), licensed under the
+MIT License.
 
 Copyright (c) Peter Steinberger and CodexBar contributors.
 

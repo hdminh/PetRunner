@@ -23,6 +23,22 @@ export type UsageResponse = {
   truncated?: boolean;
 };
 export type Budget = { dailyUSD: number | null; monthlyUSD: number | null };
+export type RateWindow = {
+  usedPercent: number;
+  remainingPercent: number;
+  windowMinutes: number | null;
+  resetsAt: string | null;
+  label: string | null;
+};
+export type ProviderQuota = {
+  primary: RateWindow | null;
+  secondary: RateWindow | null;
+  tertiary: RateWindow | null;
+  monthlySpend: { usedUSD: number; limitUSD: number | null; resetsAt: string | null } | null;
+  source: string;
+  updatedAt: string;
+  message: string | null;
+};
 export type ProviderInfo = {
   id: Provider;
   name: string;
@@ -42,6 +58,7 @@ export type ProviderInfo = {
   costLabel: string | null;
   usageURL?: string;
   statusURL?: string;
+  quota?: ProviderQuota | null;
 };
 export type PetInfo = {
   id: string;
@@ -64,6 +81,9 @@ export type AppState = {
   settings?: {
     budgets?: Partial<Record<Provider, Budget>>;
     showStatusItem?: boolean;
+    petHidden?: boolean;
+    quotaBarVisible?: boolean;
+    quotaBarMode?: "auto" | "daily" | "monthly" | "plan" | "off";
     petsDirectory?: string | null;
     petsDirectorySource?: string | null;
     petsDirectoryEditable?: boolean;
@@ -92,10 +112,17 @@ export type MonitorProviderOption = {
   configPath: string;
   headerColor?: { red: number; green: number; blue: number };
 };
+export type MonitorBubbleAppearance = {
+  scale: "compact" | "default" | "large";
+  fontSize: "sm" | "md" | "lg";
+  useProviderHeaderTint: boolean;
+  visibleFields: string[];
+};
 export type MonitorSettings = {
   enabled: boolean;
   provider: Provider | null;
   visibleFields: string[];
+  appearance: MonitorBubbleAppearance;
   providers: MonitorProviderOption[];
 };
 export type ProviderLinks = Pick<ProviderInfo, "usageURL" | "statusURL">;

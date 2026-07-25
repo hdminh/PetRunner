@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 public struct ProviderHeaderColor: Equatable, Sendable {
@@ -45,6 +46,87 @@ public enum MonitorBubbleField: String, CaseIterable, Codable, Sendable {
         case .sessionName: "Session name"
         case .cost: "Cost"
         }
+    }
+}
+
+public enum MonitorBubbleScale: String, CaseIterable, Codable, Sendable {
+    case compact
+    case `default`
+    case large
+
+    public var factor: CGFloat {
+        switch self {
+        case .compact: 0.85
+        case .default: 1.0
+        case .large: 1.2
+        }
+    }
+
+    public var displayLabel: String {
+        switch self {
+        case .compact: "Compact"
+        case .default: "Default"
+        case .large: "Large"
+        }
+    }
+}
+
+public enum MonitorBubbleFontSize: String, CaseIterable, Codable, Sendable {
+    case sm
+    case md
+    case lg
+
+    public var modelPointSize: CGFloat {
+        switch self {
+        case .sm: 11
+        case .md: 12
+        case .lg: 14
+        }
+    }
+
+    public var bodyPointSize: CGFloat {
+        switch self {
+        case .sm: 9
+        case .md: 10
+        case .lg: 12
+        }
+    }
+
+    public var displayLabel: String {
+        switch self {
+        case .sm: "Small"
+        case .md: "Medium"
+        case .lg: "Large"
+        }
+    }
+}
+
+public struct MonitorBubbleAppearance: Equatable, Sendable {
+    public var scale: MonitorBubbleScale
+    public var fontSize: MonitorBubbleFontSize
+    public var visibleFields: [MonitorBubbleField]
+    public var useProviderHeaderTint: Bool
+
+    public static let `default` = MonitorBubbleAppearance(
+        scale: .default,
+        fontSize: .md,
+        visibleFields: MonitorBubbleField.allCases,
+        useProviderHeaderTint: true
+    )
+
+    public init(
+        scale: MonitorBubbleScale = .default,
+        fontSize: MonitorBubbleFontSize = .md,
+        visibleFields: [MonitorBubbleField] = MonitorBubbleField.allCases,
+        useProviderHeaderTint: Bool = true
+    ) {
+        self.scale = scale
+        self.fontSize = fontSize
+        let unique = visibleFields.reduce(into: [MonitorBubbleField]()) { result, field in
+            if !result.contains(field) { result.append(field) }
+        }
+        self.visibleFields = unique.isEmpty ? MonitorBubbleField.allCases : unique
+        self.useProviderHeaderTint = useProviderHeaderTint
     }
 }
 
@@ -475,6 +557,8 @@ public struct AgentSessionStore: Sendable {
         let activity = event.activity ?? existing?.activity
         let agentType = event.agentType ?? existing?.agentType
         let sessionName = event.sessionName ?? existing?.sessionName
+        // Prefer the latest reported cost; fall back to the retained value so
+        // intermediate tool events without cost do not clear the bubble line.
         let estimatedCost = event.estimatedCost ?? existing?.estimatedCost
         let snapshot = AgentSessionSnapshot(
             key: event.key,

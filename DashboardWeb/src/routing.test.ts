@@ -18,6 +18,7 @@ describe("dashboard routing", () => {
     expect(parseLocation("#/providers")).toMatchObject({ view: "provider", provider: null, panel: null });
     expect(parseLocation("#/pets")).toMatchObject({ view: "pets" });
     expect(parseLocation("#/monitor")).toMatchObject({ view: "monitor" });
+    expect(parseLocation("#/bubble")).toMatchObject({ view: "monitor" });
     expect(parseLocation("")).toMatchObject({ view: "overview" });
   });
 
@@ -61,6 +62,7 @@ describe("dashboard routing", () => {
     expect(buildHash({ view: "provider", provider: "claude", panel: "usage" })).toBe("#/providers?provider=claude");
     expect(buildHash({ view: "analytics", analyticsTab: "models", provider: "codex" })).toBe("#/analytics/models?provider=codex");
     expect(buildHash({ view: "pets", provider: "cursor" })).toBe("#/pets");
+    expect(buildHash({ view: "monitor" })).toBe("#/monitor");
   });
 
   it("prefers URL provider over stored fallback", () => {

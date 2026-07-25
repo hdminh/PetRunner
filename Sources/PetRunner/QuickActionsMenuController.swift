@@ -8,6 +8,9 @@ final class QuickActionsMenuController: NSObject {
         let selectedPetID: String?
         let monitorEnabled: Bool
         let autonomyEnabled: Bool
+        let petHidden: Bool
+        let quotaBarVisible: Bool
+        let quotaBarMode: QuotaBarMode
         let todayUsage: String
         let monthUsage: String
     }
@@ -19,6 +22,10 @@ final class QuickActionsMenuController: NSObject {
     var onImportPet: (() -> Void)?
     var onToggleAutonomy: (() -> Void)?
     var onToggleMonitor: (() -> Void)?
+    var onRefreshMonitorBubble: (() -> Void)?
+    var onTogglePetHidden: (() -> Void)?
+    var onToggleQuotaBarVisible: (() -> Void)?
+    var onSetQuotaBarMode: ((QuotaBarMode) -> Void)?
     var onQuit: (() -> Void)?
 
     init(state: @escaping () -> State?) { self.state = state }
@@ -26,6 +33,25 @@ final class QuickActionsMenuController: NSObject {
     func makeMenu() -> NSMenu? {
         guard let state = state() else { return nil }
         let menu = NSMenu(title: "PetRunner")
+
+        let pets = NSMenu(title: "Pet")
+        for pet in state.pets {
+            let entry = item(pet.displayName, action: #selector(selectPet(_:)))
+            entry.representedObject = pet.id
+            entry.state = pet.id == state.selectedPetID ? .on : .off
+            pets.addItem(entry)
+        }
+        let petMenu = NSMenuItem(title: "Pet", action: nil, keyEquivalent: "")
+        petMenu.submenu = pets
+        menu.addItem(petMenu)
+
+        let autonomy = item("Autonomous Pet", action: #selector(toggleAutonomy))
+        autonomy.state = state.autonomyEnabled ? .on : .off
+        menu.addItem(autonomy)
+        menu.addItem(item(state.petHidden ? "Show Pet" : "Hide Pet", action: #selector(togglePetHidden)))
+        menu.addItem(item("Import Pet…", action: #selector(importPet)))
+        menu.addItem(.separator())
+
         menu.addItem(item("Open Dashboard", action: #selector(openDashboard)))
         let today = NSMenuItem(title: "Today: \(state.todayUsage)", action: nil, keyEquivalent: "")
         today.isEnabled = false
@@ -36,27 +62,41 @@ final class QuickActionsMenuController: NSObject {
         menu.addItem(item("Refresh Usage", action: #selector(refreshUsage)))
         menu.addItem(.separator())
 
-        let pets = NSMenu(title: "Change Pet")
-        for pet in state.pets {
-            let entry = item(pet.displayName, action: #selector(selectPet(_:)))
-            entry.representedObject = pet.id
-            entry.state = pet.id == state.selectedPetID ? .on : .off
-            pets.addItem(entry)
-        }
-        let change = NSMenuItem(title: "Change Pet", action: nil, keyEquivalent: "")
-        change.submenu = pets
-        menu.addItem(change)
-        menu.addItem(item("Import Pet…", action: #selector(importPet)))
-        menu.addItem(.separator())
-        let autonomy = item("Autonomous Pet", action: #selector(toggleAutonomy))
-        autonomy.state = state.autonomyEnabled ? .on : .off
-        menu.addItem(autonomy)
         let monitor = item("Agent Monitor", action: #selector(toggleMonitor))
         monitor.state = state.monitorEnabled ? .on : .off
         menu.addItem(monitor)
+        if state.monitorEnabled {
+            menu.addItem(item("Reset Monitor Bubble", action: #selector(refreshMonitorBubble)))
+        }
+
+        let quotaMenu = NSMenu(title: "Quota Bar")
+        let show = item(state.quotaBarVisible ? "Hide Quota Bar" : "Show Quota Bar", action: #selector(toggleQuotaBarVisible))
+        quotaMenu.addItem(show)
+        quotaMenu.addItem(.separator())
+        for mode in [QuotaBarMode.auto, .daily, .monthly, .plan] {
+            let entry = item(quotaBarModeTitle(mode), action: #selector(selectQuotaBarMode(_:)))
+            entry.representedObject = mode.rawValue
+            entry.state = state.quotaBarMode == mode ? .on : .off
+            entry.isEnabled = state.quotaBarVisible
+            quotaMenu.addItem(entry)
+        }
+        let quotaItem = NSMenuItem(title: "Quota Bar", action: nil, keyEquivalent: "")
+        quotaItem.submenu = quotaMenu
+        menu.addItem(quotaItem)
+
         menu.addItem(.separator())
         menu.addItem(item("Quit PetRunner", action: #selector(quit)))
         return menu
+    }
+
+    private func quotaBarModeTitle(_ mode: QuotaBarMode) -> String {
+        switch mode {
+        case .auto: "Auto"
+        case .daily: "Daily Limit"
+        case .monthly: "Monthly Limit"
+        case .plan: "Plan Quota"
+        case .off: "Off"
+        }
     }
 
     private func item(_ title: String, action: Selector) -> NSMenuItem {
@@ -71,5 +111,12 @@ final class QuickActionsMenuController: NSObject {
     @objc private func importPet() { onImportPet?() }
     @objc private func toggleAutonomy() { onToggleAutonomy?() }
     @objc private func toggleMonitor() { onToggleMonitor?() }
+    @objc private func refreshMonitorBubble() { onRefreshMonitorBubble?() }
+    @objc private func togglePetHidden() { onTogglePetHidden?() }
+    @objc private func toggleQuotaBarVisible() { onToggleQuotaBarVisible?() }
+    @objc private func selectQuotaBarMode(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let mode = QuotaBarMode(rawValue: raw) else { return }
+        onSetQuotaBarMode?(mode)
+    }
     @objc private func quit() { onQuit?() }
 }

@@ -7,6 +7,8 @@ final class StackedBubbleBackgroundView: NSView {
     var selectedIndex = 0 { didSet { needsDisplay = true } }
     var providerLabel = "" { didSet { needsDisplay = true } }
     var headerColor = ProviderHeaderColor(red: 0.72, green: 0.72, blue: 0.72) { didSet { needsDisplay = true } }
+    var useProviderHeaderTint = true { didSet { needsDisplay = true } }
+    var layoutScale: CGFloat = 1 { didSet { needsDisplay = true } }
     var sessionPosition = "" { didSet { needsDisplay = true } }
     var indicatorTones: [AgentStatusTone] = [] { didSet { needsDisplay = true } }
     var detailLineCount = 0 { didSet { needsDisplay = true } }
@@ -21,7 +23,8 @@ final class StackedBubbleBackgroundView: NSView {
             selectedIndex: selectedIndex,
             detailLineCount: detailLineCount,
             side: thoughtSide,
-            isCollapsed: isCollapsed
+            isCollapsed: isCollapsed,
+            scale: layoutScale
         )
     }
 
@@ -45,8 +48,18 @@ final class StackedBubbleBackgroundView: NSView {
 
         drawMinimizeBar(in: layout.collapseControlFrame)
         drawResetGlyph(in: layout.resetControlFrame)
-        drawPixelText(providerLabel, at: CGPoint(x: layout.resetControlFrame.maxX + 6, y: bubble.maxY - 8), scale: 1)
-        drawPixelText(sessionPosition, at: CGPoint(x: layout.sessionPositionFrame.minX, y: layout.sessionPositionFrame.maxY - 1), scale: 1)
+        let providerColor = useProviderHeaderTint ? color(for: headerColor) : .black
+        drawPixelText(
+            providerLabel,
+            at: CGPoint(x: layout.resetControlFrame.maxX + 6 * layoutScale, y: bubble.maxY - 8 * layoutScale),
+            scale: layoutScale,
+            color: providerColor
+        )
+        drawPixelText(
+            sessionPosition,
+            at: CGPoint(x: layout.sessionPositionFrame.minX, y: layout.sessionPositionFrame.maxY - 1 * layoutScale),
+            scale: layoutScale
+        )
 
         drawNavigationButton(in: layout.previousControlFrame, pointingUp: true, enabled: canSelectPrevious)
         drawNavigationButton(in: layout.nextControlFrame, pointingUp: false, enabled: canSelectNext)

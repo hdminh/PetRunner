@@ -103,6 +103,9 @@ describe("provider links", () => {
       pet: { selectedID: "missy", width: 160, autonomy: { enabled: true, minimumWait: 5, maximumWait: 20, actions: ["wave"] } },
       settings: {
         showStatusItem: false,
+        petHidden: true,
+        quotaBarVisible: false,
+        quotaBarMode: "daily",
         petsDirectory: "/Users/me/.codex/pets",
         petsDirectorySource: "default",
         petsDirectoryEditable: true,
@@ -115,6 +118,9 @@ describe("provider links", () => {
     expect(state.pets?.[0].tags).toEqual(["animated", "cute", "mascot"]);
     expect(state.pet).toMatchObject({ selectedID: "missy", width: 160 });
     expect(state.settings?.showStatusItem).toBe(false);
+    expect(state.settings?.petHidden).toBe(true);
+    expect(state.settings?.quotaBarVisible).toBe(false);
+    expect(state.settings?.quotaBarMode).toBe("daily");
     expect(state.settings?.petsDirectory).toBe("/Users/me/.codex/pets");
     expect(state.settings?.petsDirectoryEditable).toBe(true);
     expect(state.capabilities?.petRemove).toBe(true);
@@ -143,6 +149,12 @@ describe("provider links", () => {
       enabled: true,
       provider: "cursor",
       visibleFields: ["model", "job", "sessionName", "cost"],
+      appearance: {
+        scale: "default",
+        fontSize: "md",
+        useProviderHeaderTint: true,
+        visibleFields: ["model", "job", "sessionName", "cost"],
+      },
     });
     expect(monitor.providers[0]).toMatchObject({
       id: "cursor",
