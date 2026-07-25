@@ -6,7 +6,7 @@ module: agent-monitor
 problem_type: design_pattern
 component: tooling
 severity: medium
-last_updated: 2026-07-20
+last_updated: 2026-07-25
 applies_when:
   - "A local desktop app consumes events from more than one coding-agent provider."
   - "The UI needs both at-a-glance session state and reviewable local session history."
@@ -77,6 +77,16 @@ stores a provider's raw payload, prompt, tool result, or transcript.
    after 15 minutes and removes a record when that session reaches a terminal
    status ([AgentMonitorRecoveryJournal.swift](../../../Sources/PetRunnerCore/AgentMonitorRecoveryJournal.swift)).
 
+9. Offer an explicit Reset Monitor Bubble action that clears stuck live
+   presentation the same way the bubble close control does — cancel pending
+   expiry, `removeAll` on the live store, drop recovery-journal entries, hide
+   the bubble, and restore the pet animation. Wire the status menu and quick
+   actions to that handler; do not call a presentation-only refresh when the
+   label implies clearing sessions
+   ([AppDelegate.swift](../../../Sources/PetRunner/AppDelegate.swift),
+   [StatusMenuController.swift](../../../Sources/PetRunner/StatusMenuController.swift),
+   [QuickActionsMenuController.swift](../../../Sources/PetRunner/QuickActionsMenuController.swift)).
+
 ## Why This Matters
 
 The live bubble and durable history answer different questions. The live store
@@ -130,5 +140,6 @@ session bubble ([DashboardWindowController.swift](../../../Sources/PetRunner/Das
 
 ## Related
 
+- [Quiet Claude credential reuse with provider quota HP bar](./quiet-provider-credentials-and-quota-hp-bar.md) — intent-gated Claude OAuth for quota meters and shared HP-bar resolution.
 - [Agent Session Monitor plan](../../plans/2026-07-14-001-feat-agent-session-monitor-plan.md) records the original monitor decisions.
 - [Run locally guide](../../RUN_LOCAL.md) contains user-facing setup and troubleshooting material.

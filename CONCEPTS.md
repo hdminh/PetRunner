@@ -21,3 +21,12 @@ The local, user-reviewable record of normalized monitor sessions and their meani
 
 ### Recovery journal
 The short-lived private handoff of derived active monitor snapshots used to restore live presentation after a restart, distinct from session history.
+
+### Quota bar
+The under-pet pixel meter that shows remaining usage for the active monitor provider. It is resolved from local spend budgets and remote plan windows, not from raw provider payloads.
+
+### Provider quota snapshot
+A normalized, time-bounded view of a provider's plan usage windows used to choose quota-bar segments. Distinct from spend/cost tracking and from live monitor-session status.
+
+### Intent-gated credential access
+The rule that background monitor paths may only use already-available credential material, while an explicit user refresh may perform a one-shot interactive read and then cache the result for silent reuse.

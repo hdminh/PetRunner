@@ -101,6 +101,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sessionBubble.onExpand = { [weak self] in self?.setMonitorBubbleCollapsed(false) }
         sessionBubble.onReset = { [weak self] in self?.resetMonitorSessions() }
         overlay.onFrameChanged = { [weak self] _ in self?.refreshMonitorPresentation() }
+        overlay.onQuotaBarCollapsedChanged = { [weak self] collapsed in
+            self?.preferences.quotaBarCollapsed = collapsed
+        }
+        overlay.setQuotaBarCollapsed(preferences.quotaBarCollapsed)
         overlay.setAutonomyEnabled(preferences.autonomyEnabled)
         overlay.setAutonomyConfiguration(preferences.autonomyConfiguration)
         reloadPets()
@@ -586,7 +590,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.overlay.setAutonomyEnabled(enabled)
                 self.setAutonomyConfiguration(configuration)
             },
-            onRefreshUsage: { [weak self] in self?.refreshUsage(allowClaudeKeychainPrompt: true) },
+            onRefreshUsage: { [weak self] allowClaudeKeychainPrompt in
+                self?.refreshUsage(allowClaudeKeychainPrompt: allowClaudeKeychainPrompt)
+            },
             onSetStatusItemVisible: { [weak self] visible in
                 guard let self else { return }
                 self.preferences.showsStatusItem = visible

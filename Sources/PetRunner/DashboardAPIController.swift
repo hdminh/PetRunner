@@ -39,7 +39,7 @@ final class DashboardAPIController {
     private let onResetPosition: () -> Void
     private let onRemovePet: (String) throws -> Void
     private let onSetAutonomy: (Bool, AutonomyConfiguration) -> Void
-    private let onRefreshUsage: () -> Void
+    private let onRefreshUsage: (_ allowClaudeKeychainPrompt: Bool) -> Void
     private let onSetStatusItemVisible: (Bool) -> Void
     private let onSetPetHidden: (Bool) -> Void
     private let onSetQuotaBarVisible: (Bool) -> Void
@@ -72,7 +72,7 @@ final class DashboardAPIController {
         onResetPosition: @escaping () -> Void,
         onRemovePet: @escaping (String) throws -> Void,
         onSetAutonomy: @escaping (Bool, AutonomyConfiguration) -> Void,
-        onRefreshUsage: @escaping () -> Void,
+        onRefreshUsage: @escaping (_ allowClaudeKeychainPrompt: Bool) -> Void,
         onSetStatusItemVisible: @escaping (Bool) -> Void,
         onSetPetHidden: @escaping (Bool) -> Void = { _ in },
         onSetQuotaBarVisible: @escaping (Bool) -> Void = { _ in },
@@ -171,7 +171,7 @@ final class DashboardAPIController {
         case ("DELETE", let path) where path.hasPrefix("/pets/"):
             return removePet(path: path)
         case ("POST", "/refresh"), ("POST", "/usage/refresh"):
-            onRefreshUsage()
+            onRefreshUsage(true)
             return .json(status: 202, object: ["ok": true])
         case ("PUT", "/pet"):
             return updatePet(body: request.body)
@@ -281,7 +281,8 @@ final class DashboardAPIController {
             if result.changed {
                 // New rates change `BundledPricing.version` / parser revision, so
                 // the next usage scan rebuilds Claude/Codex costs from tokens.
-                onRefreshUsage()
+                // Keep this silent — refreshing prices must not prompt Keychain.
+                onRefreshUsage(false)
             }
             return pricingCatalogResponse(
                 query: query,

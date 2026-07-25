@@ -33,6 +33,25 @@ final class QuickActionsMenuController: NSObject {
     func makeMenu() -> NSMenu? {
         guard let state = state() else { return nil }
         let menu = NSMenu(title: "PetRunner")
+
+        let pets = NSMenu(title: "Pet")
+        for pet in state.pets {
+            let entry = item(pet.displayName, action: #selector(selectPet(_:)))
+            entry.representedObject = pet.id
+            entry.state = pet.id == state.selectedPetID ? .on : .off
+            pets.addItem(entry)
+        }
+        let petMenu = NSMenuItem(title: "Pet", action: nil, keyEquivalent: "")
+        petMenu.submenu = pets
+        menu.addItem(petMenu)
+
+        let autonomy = item("Autonomous Pet", action: #selector(toggleAutonomy))
+        autonomy.state = state.autonomyEnabled ? .on : .off
+        menu.addItem(autonomy)
+        menu.addItem(item(state.petHidden ? "Show Pet" : "Hide Pet", action: #selector(togglePetHidden)))
+        menu.addItem(item("Import Pet…", action: #selector(importPet)))
+        menu.addItem(.separator())
+
         menu.addItem(item("Open Dashboard", action: #selector(openDashboard)))
         let today = NSMenuItem(title: "Today: \(state.todayUsage)", action: nil, keyEquivalent: "")
         today.isEnabled = false
@@ -43,21 +62,6 @@ final class QuickActionsMenuController: NSObject {
         menu.addItem(item("Refresh Usage", action: #selector(refreshUsage)))
         menu.addItem(.separator())
 
-        let pets = NSMenu(title: "Change Pet")
-        for pet in state.pets {
-            let entry = item(pet.displayName, action: #selector(selectPet(_:)))
-            entry.representedObject = pet.id
-            entry.state = pet.id == state.selectedPetID ? .on : .off
-            pets.addItem(entry)
-        }
-        let change = NSMenuItem(title: "Change Pet", action: nil, keyEquivalent: "")
-        change.submenu = pets
-        menu.addItem(change)
-        menu.addItem(item("Import Pet…", action: #selector(importPet)))
-        menu.addItem(.separator())
-        let autonomy = item("Autonomous Pet", action: #selector(toggleAutonomy))
-        autonomy.state = state.autonomyEnabled ? .on : .off
-        menu.addItem(autonomy)
         let monitor = item("Agent Monitor", action: #selector(toggleMonitor))
         monitor.state = state.monitorEnabled ? .on : .off
         menu.addItem(monitor)
@@ -80,7 +84,6 @@ final class QuickActionsMenuController: NSObject {
         quotaItem.submenu = quotaMenu
         menu.addItem(quotaItem)
 
-        menu.addItem(item(state.petHidden ? "Show Pet" : "Hide Pet", action: #selector(togglePetHidden)))
         menu.addItem(.separator())
         menu.addItem(item("Quit PetRunner", action: #selector(quit)))
         return menu

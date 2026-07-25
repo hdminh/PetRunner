@@ -131,9 +131,23 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(heading)
         menu.addItem(.separator())
 
-        let changePetItem = NSMenuItem(title: "Change Pet", action: nil, keyEquivalent: "")
-        changePetItem.submenu = makePetSubmenu()
-        menu.addItem(changePetItem)
+        let petItem = NSMenuItem(title: "Pet", action: nil, keyEquivalent: "")
+        petItem.submenu = makePetSubmenu()
+        menu.addItem(petItem)
+
+        let autonomy = NSMenuItem(title: "Autonomous Pet", action: #selector(toggleAutonomy), keyEquivalent: "")
+        autonomy.target = self
+        autonomy.state = autonomyEnabled ? .on : .off
+        menu.addItem(autonomy)
+
+        let hidePet = NSMenuItem(
+            title: petHidden ? "Show Pet" : "Hide Pet",
+            action: #selector(togglePetHidden),
+            keyEquivalent: "h"
+        )
+        hidePet.target = self
+        hidePet.isEnabled = selectedID != nil || !pets.isEmpty
+        menu.addItem(hidePet)
 
         let sizeMenu = NSMenu(title: "Size")
         for (title, width) in [
@@ -156,10 +170,6 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         reload.target = self
         menu.addItem(reload)
 
-        let dashboard = NSMenuItem(title: "Open Dashboard…", action: #selector(openDashboard), keyEquivalent: "d")
-        dashboard.target = self
-        menu.addItem(dashboard)
-
         if !failures.isEmpty {
             let errorMenu = NSMenu(title: "Unavailable Pets")
             for failure in failures {
@@ -172,6 +182,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             errorItem.submenu = errorMenu
             menu.addItem(errorItem)
         }
+
+        menu.addItem(.separator())
+        let dashboard = NSMenuItem(title: "Open Dashboard…", action: #selector(openDashboard), keyEquivalent: "d")
+        dashboard.target = self
+        menu.addItem(dashboard)
 
         menu.addItem(.separator())
         let monitorMenu = NSMenu(title: "Agent Monitor")
@@ -199,11 +214,6 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         monitorItem.submenu = monitorMenu
         menu.addItem(monitorItem)
 
-        let autonomy = NSMenuItem(title: "Autonomous Pet", action: #selector(toggleAutonomy), keyEquivalent: "")
-        autonomy.target = self
-        autonomy.state = autonomyEnabled ? .on : .off
-        menu.addItem(autonomy)
-
         let quotaMenu = NSMenu(title: "Quota Bar")
         let showQuota = NSMenuItem(
             title: quotaBarVisible ? "Hide Quota Bar" : "Show Quota Bar",
@@ -225,15 +235,6 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         quotaItem.submenu = quotaMenu
         menu.addItem(quotaItem)
 
-        let hidePet = NSMenuItem(
-            title: petHidden ? "Show Pet" : "Hide Pet",
-            action: #selector(togglePetHidden),
-            keyEquivalent: "h"
-        )
-        hidePet.target = self
-        hidePet.isEnabled = selectedID != nil || !pets.isEmpty
-        menu.addItem(hidePet)
-
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit PetRunner", action: #selector(quitApp), keyEquivalent: "q")
         quit.target = self
@@ -242,40 +243,40 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     }
 
     private func makePetSubmenu() -> NSMenu {
-        let submenu = NSMenu(title: "Change Pet")
+        let submenu = NSMenu(title: "Pet")
         submenu.delegate = self
         petSubmenu = submenu
 
-        guard !pets.isEmpty else {
+        if pets.isEmpty {
             previewView = nil
             let empty = NSMenuItem(title: "No valid pets found", action: nil, keyEquivalent: "")
             empty.isEnabled = false
             submenu.addItem(empty)
-            return submenu
-        }
+        } else {
+            let initialPet = pets.first(where: { $0.id == selectedID }) ?? pets[0]
+            let preview = PetPreviewMenuView(frame: CGRect(x: 0, y: 0, width: 260, height: 88))
+            preview.update(pet: initialPet, image: thumbnail(for: initialPet))
+            previewView = preview
+            let previewItem = NSMenuItem()
+            previewItem.view = preview
+            previewItem.isEnabled = false
+            submenu.addItem(previewItem)
+            submenu.addItem(.separator())
 
-        let initialPet = pets.first(where: { $0.id == selectedID }) ?? pets[0]
-        let preview = PetPreviewMenuView(frame: CGRect(x: 0, y: 0, width: 260, height: 88))
-        preview.update(pet: initialPet, image: thumbnail(for: initialPet))
-        previewView = preview
-        let previewItem = NSMenuItem()
-        previewItem.view = preview
-        previewItem.isEnabled = false
-        submenu.addItem(previewItem)
-        submenu.addItem(.separator())
-
-        for pet in pets {
-            let item = NSMenuItem(title: pet.displayName, action: #selector(selectPet(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = pet.id
-            item.state = pet.id == selectedID ? .on : .off
-            item.toolTip = pet.description
-            if let image = thumbnail(for: pet)?.copy() as? NSImage {
-                image.size = CGSize(width: 24, height: 26)
-                item.image = image
+            for pet in pets {
+                let item = NSMenuItem(title: pet.displayName, action: #selector(selectPet(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = pet.id
+                item.state = pet.id == selectedID ? .on : .off
+                item.toolTip = pet.description
+                if let image = thumbnail(for: pet)?.copy() as? NSImage {
+                    image.size = CGSize(width: 24, height: 26)
+                    item.image = image
+                }
+                submenu.addItem(item)
             }
-            submenu.addItem(item)
         }
+
         return submenu
     }
 

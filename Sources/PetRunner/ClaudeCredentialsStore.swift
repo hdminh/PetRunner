@@ -5,13 +5,15 @@ import Security
 
 /// Reads Claude Code OAuth credentials without re-prompting on every launch.
 ///
-/// Mirrors CodexBar's approach:
+/// Mirrors CodexBar's approach, with a stricter silent path for ad-hoc builds:
 /// - Prefer `~/.claude/.credentials.json` when present
 /// - Cache the token blob in Application Support (not Keychain) so ad-hoc
 ///   re-signing via `build_and_run.sh` does not invalidate access
-/// - Silent Keychain reads use both `interactionNotAllowed` and
-///   `kSecUseAuthenticationUIFail` (CodexBar's `KeychainNoUIQuery`)
+/// - Launch / timer / dashboard poll must NEVER query Claude's Keychain item.
+///   `KeychainNoUIQuery` is not reliable for foreign ACL items on some macOS
+///   builds and still surfaces Allow/Deny sheets.
 /// - Interactive Claude Keychain access is only for explicit user actions
+///   (`allowPrompt: true`), then immediately cached to Application Support.
 /// - Never touch `vn.hodinhminh.petrunner.claude-credentials`: bare
 ///   SecItemDelete/CopyMatching on that ACL-bound item re-prompts after
 ///   ad-hoc re-sign. File cache / `~/.claude` only.
@@ -44,32 +46,35 @@ enum ClaudeCredentialsStore {
             }
         }
 
-        // Always try a silent Claude Keychain read first (CodexBar NoUI).
-        if let object = loadClaudeKeychainObject(allowPrompt: false) {
+        // Silent callers stop here. Probing Claude Code-credentials — even with
+        // KeychainNoUIQuery — can still show an Allow/Deny sheet for ad-hoc
+        // signed PetRunner binaries after each rebuild.
+        guard allowPrompt else {
+            return memory.get().flatMap { token(from: $0.object) }
+                ?? loadFileCache().flatMap { token(from: $0.object) }
+        }
+
+        // Explicit Refresh: try a no-UI probe first, then one interactive read.
+        if let object = loadClaudeKeychainObject(allowPrompt: false)
+            ?? loadClaudeKeychainObject(allowPrompt: true)
+        {
             let credentials = CachedCredentials(object: object, modifiedAt: claudeKeychainModifiedAt())
             persistCache(credentials)
             return token(from: object)
         }
 
-        guard allowPrompt,
-              let object = loadClaudeKeychainObject(allowPrompt: true)
-        else {
-            return memory.get().flatMap { token(from: $0.object) }
-                ?? loadFileCache().flatMap { token(from: $0.object) }
-        }
-
-        let credentials = CachedCredentials(object: object, modifiedAt: claudeKeychainModifiedAt())
-        persistCache(credentials)
-        return token(from: object)
+        return memory.get().flatMap { token(from: $0.object) }
+            ?? loadFileCache().flatMap { token(from: $0.object) }
     }
 
-    /// Presence check that never presents a keychain prompt.
+    /// Presence check that never presents a keychain prompt and never touches
+    /// Claude's Keychain item (dashboard polls this every few seconds).
     static func credentialsPresent() -> Bool {
         accessLock.lock()
         defer { accessLock.unlock() }
         if credentialsFileObject() != nil { return true }
         if memory.get() != nil || loadFileCache() != nil { return true }
-        return loadClaudeKeychainObject(allowPrompt: false) != nil
+        return false
     }
 
     static func invalidateCache() {
