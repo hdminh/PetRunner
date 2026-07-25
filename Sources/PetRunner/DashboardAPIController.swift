@@ -113,9 +113,7 @@ final class DashboardAPIController {
         case ("GET", "/pricing"), ("HEAD", "/pricing"):
             return pricingCatalogResponse(query: request.queryItems)
         case ("POST", "/pricing/refresh"):
-            // v1: bundled static catalog — revalidate by returning the same snapshot.
-            // Structured so a future LiteLLM (or similar) fetch can replace the body.
-            return pricingCatalogResponse(query: request.queryItems, refreshed: true)
+            return refreshPricingCatalog(query: request.queryItems)
         case ("GET", "/usage"), ("HEAD", "/usage"):
             return usageResponse(query: request.queryItems)
         case ("GET", "/sessions"), ("HEAD", "/sessions"):
@@ -248,7 +246,36 @@ final class DashboardAPIController {
         ]
     }
 
-    private func pricingCatalogResponse(query: [String: String], refreshed: Bool = false) -> DashboardHTTPResponse {
+    private func refreshPricingCatalog(query: [String: String]) -> DashboardHTTPResponse {
+        do {
+            let result = try PricingCatalogStore.shared.refreshSync()
+            if result.changed {
+                // New rates change `BundledPricing.version` / parser revision, so
+                // the next usage scan rebuilds Claude/Codex costs from tokens.
+                onRefreshUsage()
+            }
+            return pricingCatalogResponse(
+                query: query,
+                refreshed: true,
+                refreshSource: result.source,
+                refreshError: nil
+            )
+        } catch {
+            return pricingCatalogResponse(
+                query: query,
+                refreshed: false,
+                refreshSource: BundledPricing.catalogSource,
+                refreshError: error.localizedDescription
+            )
+        }
+    }
+
+    private func pricingCatalogResponse(
+        query: [String: String],
+        refreshed: Bool = false,
+        refreshSource: String? = nil,
+        refreshError: String? = nil
+    ) -> DashboardHTTPResponse {
         let requestedProvider: UsageProvider?
         if let raw = query["provider"], !raw.isEmpty, raw != "all" {
             guard let provider = UsageProvider(rawValue: raw) else {
@@ -277,16 +304,20 @@ final class DashboardAPIController {
             ] as [String: Any])
         })
         var object: [String: Any] = [
-            "source": "bundled",
+            "source": BundledPricing.catalogSource,
             "version": BundledPricing.version,
-            "label": "Bundled catalog · version \(BundledPricing.version)",
+            "label": BundledPricing.catalogLabel,
             "providers": providerNotes,
             "models": entries.map(pricingCatalogEntryJSON),
             "count": entries.count
         ]
         if refreshed {
             object["refreshed"] = true
-            object["refreshSource"] = "bundled"
+            object["refreshSource"] = refreshSource ?? BundledPricing.catalogSource
+        }
+        if let refreshError {
+            object["refreshError"] = refreshError
+            object["refreshed"] = false
         }
         return .json(object: object)
     }

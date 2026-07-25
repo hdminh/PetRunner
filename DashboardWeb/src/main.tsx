@@ -297,7 +297,7 @@ function ActivityPanel({ activity, error }: { activity: ActivityStats; error: st
   if (error) {
     return <Card className="activity-card"><div className="section-head"><div><h2>Activity</h2><p className="activity-subtitle">Lifetime stats and when you usually code</p></div></div><Empty>Activity error: {error}</Empty></Card>;
   }
-  const streak = `${activity.currentStreak} / ${activity.longestStreak} d`;
+  const streak = `${activity.currentStreak} / ${activity.longestStreak} D`;
   const peak = activity.peakHour < 0 ? "—" : formatPeakHour(activity.peakHour);
   return <Card className="activity-card">
     <div className="section-head activity-head">
@@ -568,6 +568,7 @@ function normalizePricingCatalog(raw: unknown): PricingCatalogResponse {
     count: typeof object.count === "number" ? object.count : modelsRaw.length,
     refreshed: Boolean(object.refreshed),
     refreshSource: typeof object.refreshSource === "string" ? object.refreshSource : undefined,
+    refreshError: typeof object.refreshError === "string" ? object.refreshError : undefined,
   };
 }
 
@@ -585,8 +586,9 @@ function ProviderPricingPanel({ provider }: { provider: Provider }) {
       const raw = mode === "refresh"
         ? await api.request<unknown>("pricing/refresh", { method: "POST", body: "{}" }, { provider })
         : await api.get<unknown>("pricing", { provider });
-      setCatalog(normalizePricingCatalog(raw));
-      setError(null);
+      const normalized = normalizePricingCatalog(raw);
+      setCatalog(normalized);
+      setError(normalized.refreshError ?? null);
     } catch (exception) {
       setError(exception instanceof Error ? exception.message : "Pricing catalog is unavailable.");
     } finally {

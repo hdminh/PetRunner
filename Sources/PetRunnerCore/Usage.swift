@@ -598,9 +598,14 @@ public enum BudgetPolicy {
 }
 
 public enum BundledPricing {
-    /// Pricing snapshot ported from CodexBar's MIT CostUsage catalog. Rates
-    /// are API-equivalent USD/token and are intentionally release-versioned.
-    public static let version = "2026-07-23"
+    /// Offline baseline aligned with models.dev / LiteLLM (no long-context
+    /// surcharge tiers, matching ccgauge `costFromUsage`). Remote refresh via
+    /// `PricingCatalogStore` layers newer model ids + rates on top.
+    public static let bundledVersion = "2026-07-25-codex"
+
+    /// Active catalog version (bundled, or bundled + remote overlay stamp).
+    /// Included in historical parser receipts so pricing refreshes rebuild costs.
+    public static var version: String { PricingCatalogStore.shared.effectiveVersion }
 
     public struct ResolvedRates: Equatable, Sendable {
         public let input: Double
@@ -626,7 +631,7 @@ public enum BundledPricing {
         public let cacheWriteAboveThresholdPerMillionUSD: Double?
     }
 
-    private struct Rates {
+    fileprivate struct Rates {
         let input: Double
         let cachedInput: Double?
         let cacheCreation: Double?
@@ -637,6 +642,9 @@ public enum BundledPricing {
         let cacheCreationAboveThreshold: Double?
         let outputAboveThreshold: Double?
     }
+
+    /// Anthropic Sonnet 5 intro pricing ends 2026-08-31; standard $3/$15 from 2026-09-01 UTC.
+    fileprivate static let sonnet5StandardRatesStart = Date(timeIntervalSince1970: 1_788_220_800)
 
     private static let codexRates: [String: Rates] = [
         "gpt-5": .init(input: 1.25e-6, cachedInput: 1.25e-7, cacheCreation: nil, output: 1e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
@@ -665,6 +673,7 @@ public enum BundledPricing {
 
     private static let claudeRates: [String: Rates] = [
         "claude-fable-5": .init(input: 1e-5, cachedInput: 1e-6, cacheCreation: 1.25e-5, output: 5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
+        "claude-mythos-5": .init(input: 1e-5, cachedInput: 1e-6, cacheCreation: 1.25e-5, output: 5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
         "claude-haiku-4-5": .init(input: 1e-6, cachedInput: 1e-7, cacheCreation: 1.25e-6, output: 5e-6, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
         "claude-opus-4": .init(input: 1.5e-5, cachedInput: 1.5e-6, cacheCreation: 1.875e-5, output: 7.5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
         "claude-opus-4-1": .init(input: 1.5e-5, cachedInput: 1.5e-6, cacheCreation: 1.875e-5, output: 7.5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
@@ -672,35 +681,30 @@ public enum BundledPricing {
         "claude-opus-4-6": .init(input: 5e-6, cachedInput: 5e-7, cacheCreation: 6.25e-6, output: 2.5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
         "claude-opus-4-7": .init(input: 5e-6, cachedInput: 5e-7, cacheCreation: 6.25e-6, output: 2.5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
         "claude-opus-4-8": .init(input: 5e-6, cachedInput: 5e-7, cacheCreation: 6.25e-6, output: 2.5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
+        "claude-opus-5": .init(input: 5e-6, cachedInput: 5e-7, cacheCreation: 6.25e-6, output: 2.5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
+        // Intro $2/$10 through 2026-08-31; `sonnet5Rates(at:)` upgrades to $3/$15 afterwards.
+        "claude-sonnet-5": .init(input: 2e-6, cachedInput: 2e-7, cacheCreation: 2.5e-6, output: 1e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
         "claude-sonnet-4": .init(input: 3e-6, cachedInput: 3e-7, cacheCreation: 3.75e-6, output: 1.5e-5, threshold: 200_000, inputAboveThreshold: 6e-6, cachedInputAboveThreshold: 6e-7, cacheCreationAboveThreshold: 7.5e-6, outputAboveThreshold: 2.25e-5),
         "claude-sonnet-4-5": .init(input: 3e-6, cachedInput: 3e-7, cacheCreation: 3.75e-6, output: 1.5e-5, threshold: 200_000, inputAboveThreshold: 6e-6, cachedInputAboveThreshold: 6e-7, cacheCreationAboveThreshold: 7.5e-6, outputAboveThreshold: 2.25e-5),
         "claude-sonnet-4-6": .init(input: 3e-6, cachedInput: 3e-7, cacheCreation: 3.75e-6, output: 1.5e-5, threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil, cacheCreationAboveThreshold: nil, outputAboveThreshold: nil),
     ]
 
-    // Claude removed the long-context surcharge for these model families in
-    // March 2026. Historical records must retain the rate active at use time.
-    private static let claudeFullContextStandardPricingCutoff = Date(timeIntervalSince1970: 1_773_360_000)
-    private static let claudeHistoricalLongContextRates: [String: Rates] = [
-        "claude-opus-4-6": .init(input: 5e-6, cachedInput: 5e-7, cacheCreation: 6.25e-6, output: 2.5e-5, threshold: 200_000, inputAboveThreshold: 1e-5, cachedInputAboveThreshold: 1e-6, cacheCreationAboveThreshold: 1.25e-5, outputAboveThreshold: 3.75e-5),
-        "claude-sonnet-4-6": .init(input: 3e-6, cachedInput: 3e-7, cacheCreation: 3.75e-6, output: 1.5e-5, threshold: 200_000, inputAboveThreshold: 6e-6, cachedInputAboveThreshold: 6e-7, cacheCreationAboveThreshold: 7.5e-6, outputAboveThreshold: 2.25e-5),
-    ]
+    // Long-context surcharge tables intentionally omitted to match ccgauge
+    // (LiteLLM snapshot drops `*_above_200k` tiers). Remote refresh may still
+    // list base rates for models that appear after this bundle ships.
 
-    /// API-equivalent calculated cost. Unknown models remain visible but are
-    /// intentionally unpriced instead of inheriting a neighbouring model.
+    /// API-equivalent calculated cost matching ccgauge `costFromUsage`.
+    /// Unknown Claude/Codex models fall back to the latest family rates;
+    /// otherwise unpriced. Remote overlay rates win over the offline bundle.
     public static func cost(model: String?, tokens: UsageTokenBreakdown, occurredAt: Date? = nil) -> UsageCost {
+        let at = occurredAt ?? .now
         guard let rawModel = model?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), !rawModel.isEmpty else {
             return UsageCost(usd: nil, provenance: .unavailable)
         }
-        let claudeModel = normalizeClaudeModel(rawModel)
-        if let rates = claudeRates[claudeModel] {
-            if let occurredAt, occurredAt < claudeFullContextStandardPricingCutoff,
-               let historicalRates = claudeHistoricalLongContextRates[claudeModel]
-            {
-                return calculated(claudeCost(rates: historicalRates, tokens: tokens), version: version)
-            }
+        if let rates = resolveClaudeRates(rawModel, at: at) {
             return calculated(claudeCost(rates: rates, tokens: tokens), version: version)
         }
-        if let rates = codexRates[normalizeCodexModel(rawModel)] {
+        if let rates = resolveCodexRates(rawModel) {
             return calculated(codexCost(rates: rates, tokens: tokens), version: version)
         }
         return UsageCost(usd: nil, provenance: .unavailable)
@@ -712,8 +716,7 @@ public enum BundledPricing {
         guard let rawModel = model?.lowercased().trimmingCharacters(in: .whitespacesAndNewlines), !rawModel.isEmpty else {
             return nil
         }
-        let rates = claudeRates[normalizeClaudeModel(rawModel)] ?? codexRates[normalizeCodexModel(rawModel)]
-        guard let rates else { return nil }
+        guard let rates = resolveClaudeRates(rawModel, at: .now) ?? resolveCodexRates(rawModel) else { return nil }
         return ResolvedRates(input: rates.input, cachedInput: rates.cachedInput, cacheCreation: rates.cacheCreation, output: rates.output)
     }
 
@@ -751,13 +754,24 @@ public enum BundledPricing {
     public static func catalog(provider: UsageProvider? = nil) -> [CatalogEntry] {
         var entries: [CatalogEntry] = []
         if provider == nil || provider == .claude {
-            entries.append(contentsOf: claudeRates.keys.sorted().map { catalogEntry(id: $0, provider: .claude, rates: claudeRates[$0]!) })
+            let ids = Set(claudeRates.keys).union(PricingCatalogStore.shared.overlayClaudeModels())
+            entries.append(contentsOf: ids.sorted().compactMap { id in
+                guard let rates = resolveClaudeRates(id, at: .now) else { return nil }
+                return catalogEntry(id: id, provider: .claude, rates: rates)
+            })
         }
         if provider == nil || provider == .codex {
-            entries.append(contentsOf: codexRates.keys.sorted().map { catalogEntry(id: $0, provider: .codex, rates: codexRates[$0]!) })
+            let ids = Set(codexRates.keys).union(PricingCatalogStore.shared.overlayCodexModels())
+            entries.append(contentsOf: ids.sorted().compactMap { id in
+                guard let rates = resolveCodexRates(id) else { return nil }
+                return catalogEntry(id: id, provider: .codex, rates: rates)
+            })
         }
         return entries
     }
+
+    public static var catalogSource: String { PricingCatalogStore.shared.sourceLabel }
+    public static var catalogLabel: String { PricingCatalogStore.shared.catalogLabel }
 
     private static func catalogEntry(id: String, provider: UsageProvider, rates: Rates) -> CatalogEntry {
         CatalogEntry(
@@ -780,40 +794,128 @@ public enum BundledPricing {
         UsageCost(usd: value, provenance: .calculated, pricingVersion: version)
     }
 
+    /// ccgauge Codex path: bill non-cached input + cache read + output at base
+    /// rates only. Long-context / priority tiers are omitted (ccgauge drops them).
     private static func codexCost(rates: Rates, tokens: UsageTokenBreakdown) -> Double {
         let totalInput = tokens.input
         let cached = min(tokens.cachedInput, totalInput)
         let cacheCreation = min(tokens.cacheCreation, totalInput - cached)
         let normal = totalInput - cached - cacheCreation
-        let longContext = rates.threshold.map { totalInput > $0 } ?? false
-        let inputRate = longContext ? rates.inputAboveThreshold ?? rates.input : rates.input
-        let cachedRate = longContext ? rates.cachedInputAboveThreshold ?? rates.cachedInput ?? inputRate : rates.cachedInput ?? rates.input
-        let creationRate = longContext ? rates.cacheCreationAboveThreshold ?? rates.cacheCreation ?? inputRate : rates.cacheCreation ?? rates.input
-        let outputRate = longContext ? rates.outputAboveThreshold ?? rates.output : rates.output
-        return Double(normal) * inputRate + Double(cached) * cachedRate + Double(cacheCreation) * creationRate + Double(tokens.output) * outputRate
+        let cachedRate = rates.cachedInput ?? rates.input
+        let creationRate = rates.cacheCreation ?? rates.input
+        return Double(normal) * rates.input
+            + Double(cached) * cachedRate
+            + Double(cacheCreation) * creationRate
+            + Double(tokens.output) * rates.output
     }
 
+    /// ccgauge `costFromUsage`: input + output + cacheCreation5m + cacheCreation1h + cacheRead.
+    /// 1h writes use 2× input (LiteLLM only publishes 5m write cost). No 200k tiers.
     private static func claudeCost(rates: Rates, tokens: UsageTokenBreakdown) -> Double {
-        let longContext = rates.threshold.map { tokens.input + tokens.cachedInput + tokens.cacheCreation > $0 } ?? false
-        let inputRate = longContext ? rates.inputAboveThreshold ?? rates.input : rates.input
-        let cachedRate = longContext ? rates.cachedInputAboveThreshold ?? rates.cachedInput ?? inputRate : rates.cachedInput ?? rates.input
-        let creationRate = longContext ? rates.cacheCreationAboveThreshold ?? rates.cacheCreation ?? inputRate : rates.cacheCreation ?? rates.input
+        let cachedRate = rates.cachedInput ?? rates.input
+        let creation5mRate = rates.cacheCreation ?? rates.input
+        let creation1hRate = rates.input * 2
         let creation1h = min(tokens.cacheCreation1h, tokens.cacheCreation)
-        return Double(tokens.input) * inputRate
+        let creation5m = tokens.cacheCreation - creation1h
+        return Double(tokens.input) * rates.input
+            + Double(tokens.output) * rates.output
+            + Double(creation5m) * creation5mRate
+            + Double(creation1h) * creation1hRate
             + Double(tokens.cachedInput) * cachedRate
-            + Double(tokens.cacheCreation - creation1h) * creationRate
-            + Double(creation1h) * inputRate * 2
-            + Double(tokens.output) * (longContext ? rates.outputAboveThreshold ?? rates.output : rates.output)
+    }
+
+    private static func resolveClaudeRates(_ rawModel: String, at date: Date) -> Rates? {
+        let model = normalizeClaudeModel(rawModel)
+        if let overlay = PricingCatalogStore.shared.claudeOverlay(for: model) {
+            return rates(from: overlay)
+        }
+        if isSonnet5Family(model) {
+            return sonnet5Rates(at: date)
+        }
+        if let rates = claudeRates[model] { return rates }
+        // Latest family fallback (prefer Sonnet 5 / Opus 5 when present).
+        for family in ["mythos", "fable", "opus", "sonnet", "haiku"] where model.contains(family) {
+            let fallbackKey: String
+            switch family {
+            case "mythos": fallbackKey = "claude-mythos-5"
+            case "fable": fallbackKey = "claude-fable-5"
+            case "opus": fallbackKey = "claude-opus-5"
+            case "sonnet": fallbackKey = "claude-sonnet-5"
+            default: fallbackKey = "claude-haiku-4-5"
+            }
+            if fallbackKey == "claude-sonnet-5" {
+                return sonnet5Rates(at: date)
+            }
+            if let rates = claudeRates[fallbackKey] { return rates }
+        }
+        return nil
+    }
+
+    private static func isSonnet5Family(_ model: String) -> Bool {
+        model == "claude-sonnet-5" || model.hasPrefix("claude-sonnet-5-")
+    }
+
+    private static func sonnet5Rates(at date: Date) -> Rates {
+        if date >= sonnet5StandardRatesStart {
+            return .init(
+                input: 3e-6, cachedInput: 3e-7, cacheCreation: 3.75e-6, output: 1.5e-5,
+                threshold: nil, inputAboveThreshold: nil, cachedInputAboveThreshold: nil,
+                cacheCreationAboveThreshold: nil, outputAboveThreshold: nil
+            )
+        }
+        return claudeRates["claude-sonnet-5"]!
+    }
+
+    private static func resolveCodexRates(_ rawModel: String) -> Rates? {
+        let model = normalizeCodexModel(rawModel)
+        if let overlay = PricingCatalogStore.shared.codexOverlay(for: model) {
+            return rates(from: overlay)
+        }
+        if let rates = codexRates[model] { return rates }
+        if model.hasPrefix("gpt-") || model == "gpt" {
+            return PricingCatalogStore.shared.codexOverlay(for: "gpt-5.5").map(rates(from:))
+                ?? codexRates["gpt-5.5"]
+        }
+        if model.range(of: #"^o\d"#, options: .regularExpression) != nil {
+            return nil
+        }
+        return nil
+    }
+
+    private static func rates(from overlay: PricingCatalogStore.OverlayRates) -> Rates {
+        Rates(
+            input: overlay.inputPerMillion / 1_000_000,
+            cachedInput: overlay.cacheReadPerMillion.map { $0 / 1_000_000 },
+            cacheCreation: overlay.cacheWritePerMillion.map { $0 / 1_000_000 },
+            output: overlay.outputPerMillion / 1_000_000,
+            threshold: nil,
+            inputAboveThreshold: nil,
+            cachedInputAboveThreshold: nil,
+            cacheCreationAboveThreshold: nil,
+            outputAboveThreshold: nil
+        )
     }
 
     private static func normalizeCodexModel(_ model: String) -> String {
         var model = model.hasPrefix("openai/") ? String(model.dropFirst("openai/".count)) : model
         if model == "gpt-5.6" { return "gpt-5.6-sol" }
+        // models.dev ChatGPT aliases (gpt-5.3-chat-latest → gpt-5.3 → gpt-5.3-codex).
+        if model.hasSuffix("-chat-latest") {
+            model = String(model.dropLast("-chat-latest".count))
+        }
         if let dateRange = model.range(of: #"-\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) {
             let base = String(model[..<dateRange.lowerBound])
-            if codexRates[base] != nil { model = base }
+            if knownCodexRate(base) { model = base }
+        }
+        if !knownCodexRate(model), !model.hasSuffix("-codex") {
+            let codexVariant = "\(model)-codex"
+            if knownCodexRate(codexVariant) { return codexVariant }
         }
         return model
+    }
+
+    private static func knownCodexRate(_ id: String) -> Bool {
+        codexRates[id] != nil || PricingCatalogStore.shared.codexOverlay(for: id) != nil
     }
 
     private static func normalizeClaudeModel(_ model: String) -> String {
@@ -825,7 +927,9 @@ public enum BundledPricing {
         if let versionRange = model.range(of: #"-v\d+:\d+$"#, options: .regularExpression) { model.removeSubrange(versionRange) }
         if let dateRange = model.range(of: #"-\d{8}$"#, options: .regularExpression) {
             let base = String(model[..<dateRange.lowerBound])
-            if claudeRates[base] != nil { model = base }
+            if claudeRates[base] != nil || PricingCatalogStore.shared.claudeOverlay(for: base) != nil || isSonnet5Family(base) {
+                model = base
+            }
         }
         return model
     }
@@ -1108,7 +1212,11 @@ private extension String {
 public enum LocalUsageSource {
     /// Bump when Claude/Codex JSONL → ledger mapping changes so receipts
     /// invalidate and UsageCoordinator can rebuild provider rows cleanly.
-    public static let historicalParserRevision = "historical-sessions-v3+claude-stream-dedup"
+    /// Includes the active pricing catalog version so remote rate refreshes
+    /// also force a cost rebuild on the next usage scan.
+    public static var historicalParserRevision: String {
+        "historical-sessions-v4+\(BundledPricing.version)"
+    }
 
     public static func codexRecords(root: URL, now: Date = .now) -> [AgentUsageRecord] {
         codexScan(root: root, now: now).records
@@ -1271,9 +1379,8 @@ public enum LocalUsageSource {
         var lastActivityAt = fallbackDate
         var sawEvent = false
         // Claude Code streams multiple assistant JSONL rows per API response that
-        // share message.id + requestId while output_tokens grow. CodexBar / fixed
-        // ccusage keep the final row (last-wins). Keying on uuid over-bills input
-        // by the chunk count. ccgauge's earliest-wins under-counts output.
+        // share message.id + requestId. ccgauge keeps the earliest row for usage/cost
+        // (`dedupAssistantRecords` earliest-wins). Keying on uuid over-bills input.
         var keyedRecords: [String: AgentUsageRecord] = [:]
         var unkeyedRecords: [AgentUsageRecord] = []
 
@@ -1336,7 +1443,14 @@ public enum LocalUsageSource {
                 cost: BundledPricing.cost(model: recordModel, tokens: tokens, occurredAt: occurredAt)
             )
             if let dedupeKey {
-                keyedRecords[dedupeKey] = record
+                // ccgauge earliest-wins: keep the first/earliest timestamp for cost.
+                if let existing = keyedRecords[dedupeKey] {
+                    if record.occurredAt < existing.occurredAt {
+                        keyedRecords[dedupeKey] = record
+                    }
+                } else {
+                    keyedRecords[dedupeKey] = record
+                }
             } else {
                 unkeyedRecords.append(record)
             }

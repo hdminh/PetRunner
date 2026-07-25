@@ -19,6 +19,10 @@ cleanup() {
 trap cleanup EXIT
 
 cd "$ROOT_DIR"
+if [[ ! -x "$ROOT_DIR/node_modules/.bin/vite" ]]; then
+  echo "Installing npm dependencies (vite not found in node_modules)..."
+  npm install
+fi
 npm run dashboard:build
 for ARCH in arm64 x86_64; do
   swift build \

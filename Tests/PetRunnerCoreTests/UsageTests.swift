@@ -59,9 +59,9 @@ struct UsageTests {
         #expect(records[0].tokens.total == 40)
     }
 
-    @Test func claudeStreamingChunksDedupByMessageAndRequestKeepLastWins() throws {
-        // Matches CodexBar / fixed ccusage: streaming snapshots share message.id +
-        // requestId while output_tokens grow. Counting every uuid over-bills input.
+    @Test func claudeStreamingChunksDedupByMessageAndRequestEarliestWins() throws {
+        // Matches ccgauge earliest-wins: streaming snapshots share message.id +
+        // requestId. Counting every uuid over-bills input.
         let root = try temporaryDirectory(); defer { try? FileManager.default.removeItem(at: root) }
         let projects = root.appendingPathComponent("projects", isDirectory: true)
         try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
@@ -78,11 +78,12 @@ struct UsageTests {
         #expect(records.count == 2)
         let streamed = records.first { $0.id.contains("msg_abc:req-1") }
         let second = records.first { $0.id.contains("msg_def:req-2") }
-        #expect(streamed?.tokens == UsageTokenBreakdown(input: 1000, cachedInput: 200, output: 200))
+        // ccgauge earliest-wins keeps the first streaming snapshot (output=5).
+        #expect(streamed?.tokens == UsageTokenBreakdown(input: 1000, cachedInput: 200, output: 5))
         #expect(second?.tokens == UsageTokenBreakdown(input: 10, output: 4))
         let expectedCost = BundledPricing.cost(
             model: "claude-sonnet-4-5",
-            tokens: .init(input: 1000, cachedInput: 200, output: 200),
+            tokens: .init(input: 1000, cachedInput: 200, output: 5),
             occurredAt: streamed?.occurredAt
         )
         #expect(approximatelyEqual(streamed?.cost.usd, expectedCost.usd ?? -1))
@@ -107,7 +108,7 @@ struct UsageTests {
 
         let records = LocalUsageSource.claudeRecords(roots: [projects])
         #expect(records.count == 1)
-        #expect(records[0].tokens.output == 40)
+        #expect(records[0].tokens.output == 1) // earliest-wins
         #expect(records[0].id.contains("mid:msg_only"))
     }
 
@@ -133,10 +134,19 @@ struct UsageTests {
     }
 
     @Test func pricingCatalogListsClaudeAndCodexRatesPerMillion() {
+        PricingCatalogStore.shared.resetForTesting()
         let all = BundledPricing.catalog()
+        #expect(all.contains { $0.id == "claude-sonnet-5" && $0.provider == .claude })
+        #expect(all.contains { $0.id == "claude-opus-5" && $0.provider == .claude })
         #expect(all.contains { $0.id == "claude-sonnet-4-5" && $0.provider == .claude })
         #expect(all.contains { $0.id == "gpt-5-codex" && $0.provider == .codex })
         #expect(!all.contains { $0.provider == .cursor })
+
+        let sonnet5 = all.first { $0.id == "claude-sonnet-5" }
+        #expect(sonnet5?.inputPerMillionUSD == 2)
+        #expect(sonnet5?.outputPerMillionUSD == 10)
+        #expect(sonnet5?.cacheReadPerMillionUSD == 0.2)
+        #expect(sonnet5?.cacheWritePerMillionUSD == 2.5)
 
         let sonnet = all.first { $0.id == "claude-sonnet-4-5" }
         #expect(sonnet?.inputPerMillionUSD == 3)
@@ -154,6 +164,7 @@ struct UsageTests {
     }
 
     @Test func pricingSeparatesClaudeCacheCreationAndNormalizesAliases() {
+        PricingCatalogStore.shared.resetForTesting()
         let tokens = UsageTokenBreakdown(input: 100, cachedInput: 20, cacheCreation: 10, output: 5)
         let direct = BundledPricing.cost(model: "claude-sonnet-4-5", tokens: tokens)
         let vertexAlias = BundledPricing.cost(model: "anthropic.claude-sonnet-4-5-v1:0", tokens: tokens)
@@ -161,6 +172,7 @@ struct UsageTests {
         #expect(approximatelyEqual(direct.usd, 0.0004185))
         #expect(vertexAlias == direct)
         #expect(direct.pricingVersion == BundledPricing.version)
+        #expect(BundledPricing.version.contains("2026-07-25-codex"))
     }
 
     @Test func codexPricingDoesNotDoubleBillCachedInputAndRecognizesDatedAlias() {
@@ -170,6 +182,21 @@ struct UsageTests {
 
         #expect(approximatelyEqual(direct.usd, 0.00013))
         #expect(dated == direct)
+    }
+
+    @Test func codexChatLatestAndLongContextUseBaseLiteLLMRates() {
+        PricingCatalogStore.shared.resetForTesting()
+        // gpt-5.3-chat-latest must NOT fall through to gpt-5.5 ($5/$30).
+        let million = UsageTokenBreakdown(input: 1_000_000)
+        let chatLatest = BundledPricing.cost(model: "gpt-5.3-chat-latest", tokens: million)
+        let codex = BundledPricing.cost(model: "gpt-5.3-codex", tokens: million)
+        #expect(approximatelyEqual(chatLatest.usd, 1.75))
+        #expect(chatLatest == codex)
+
+        // gpt-5.5 list has a 272k long-context tier; ccgauge bills base $5/M only.
+        let longContext = UsageTokenBreakdown(input: 300_000)
+        #expect(approximatelyEqual(BundledPricing.cost(model: "gpt-5.5", tokens: longContext).usd, 1.5))
+        #expect(approximatelyEqual(BundledPricing.cost(model: "gpt-5.2-chat-latest", tokens: million).usd, 1.75))
     }
 
     @Test func codexReasoningIsDisplayedButNotBilledTwice() {
@@ -190,22 +217,67 @@ struct UsageTests {
         #expect(UsageAggregate(records: [codex, claude]).totalTokens == 300)
     }
 
-    @Test func claudeOneHourCacheCreationAndLongContextRatesAreApplied() {
+    @Test func claudeOneHourCacheCreationMatchesCcgaugeCostFromUsage() {
+        // 100 input * 3e-6 + 10 * (2*3e-6) 1h write = 0.0003 + 0.00006 = 0.00036
         let oneHourCache = UsageTokenBreakdown(input: 100, cacheCreation: 10, cacheCreation1h: 10)
         #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-4-5", tokens: oneHourCache).usd, 0.00036))
 
+        // ccgauge drops 200k+ tiers — long prompts still bill at standard rates.
         let longContext = UsageTokenBreakdown(input: 200_001)
-        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-4-5", tokens: longContext).usd, 1.200006))
+        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-4-5", tokens: longContext).usd, 0.600003))
     }
 
-    @Test func historicalClaudeLongContextPricingUsesEventDate() {
+    @Test func ccgaugeStyleCostIgnoresLongContextSurchargeAndFallsBackByFamily() {
+        PricingCatalogStore.shared.resetForTesting()
         let tokens = UsageTokenBreakdown(input: 200_001)
         let beforeChange = Date(timeIntervalSince1970: 1_700_000_000)
         let afterChange = Date(timeIntervalSince1970: 1_800_000_000)
 
-        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-4-6", tokens: tokens, occurredAt: beforeChange).usd, 1.200006))
+        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-4-6", tokens: tokens, occurredAt: beforeChange).usd, 0.600003))
         #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-4-6", tokens: tokens, occurredAt: afterChange).usd, 0.600003))
-        #expect(BundledPricing.cost(model: "unpriced-model", tokens: tokens).usd == nil)
+        // Unknown sonnet-shaped id → family fallback (claude-sonnet-5 intro rates).
+        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-9-9-experimental", tokens: .init(input: 1_000_000), occurredAt: Date(timeIntervalSince1970: 1_753_228_800)).usd, 2.0))
+        #expect(BundledPricing.cost(model: "totally-unknown-widget", tokens: tokens).usd == nil)
+    }
+
+    @Test func sonnet5UsesIntroThenStandardRatesAndRemoteOverlayAddsModels() throws {
+        PricingCatalogStore.shared.resetForTesting()
+        let million = UsageTokenBreakdown(input: 1_000_000)
+        let intro = Date(timeIntervalSince1970: 1_753_228_800) // 2025-07-23 — before Sep 2026
+        let standard = Date(timeIntervalSince1970: 1_788_220_800) // 2026-09-01 UTC
+
+        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-5", tokens: million, occurredAt: intro).usd, 2.0))
+        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-sonnet-5", tokens: million, occurredAt: standard).usd, 3.0))
+        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-opus-5", tokens: million).usd, 5.0))
+
+        let modelsDev = """
+        {"anthropic":{"models":{"claude-sonnet-5":{"cost":{"input":2,"output":10,"cache_read":0.2,"cache_write":2.5}},"claude-haiku-5":{"cost":{"input":0.8,"output":4,"cache_read":0.08,"cache_write":1}}}},"openai":{"models":{"gpt-5.7-codex":{"cost":{"input":2,"output":12,"cache_read":0.2}}}}}
+        """.data(using: .utf8)!
+        let result = try PricingCatalogStore.shared.applyRemotePayloads(modelsDev: modelsDev)
+        #expect(result.claudeCount >= 2)
+        #expect(BundledPricing.catalog().contains { $0.id == "claude-haiku-5" && $0.inputPerMillionUSD == 0.8 })
+        #expect(BundledPricing.catalog().contains { $0.id == "gpt-5.7-codex" && $0.outputPerMillionUSD == 12 })
+        #expect(approximatelyEqual(BundledPricing.cost(model: "claude-haiku-5", tokens: million).usd, 0.8))
+        #expect(BundledPricing.version.contains("remote"))
+        PricingCatalogStore.shared.resetForTesting()
+    }
+
+    @Test func refreshSyncDetachedFetchSurfacesTransportFailure() {
+        // Exercises the Task.detached + FetchGate bridge (Swift 6 Sendable).
+        // Port 1 is unusable on macOS, so the wait returns a transport/timeout error.
+        let store = PricingCatalogStore(
+            fileURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("petrunner-pricing-\(UUID().uuidString).json"),
+            modelsDevURL: URL(string: "http://127.0.0.1:1/models.json")!,
+            litellmURL: URL(string: "http://127.0.0.1:1/litellm.json")!
+        )
+        var threw = false
+        do {
+            _ = try store.refreshSync(timeout: 3)
+        } catch {
+            threw = true
+        }
+        #expect(threw)
     }
 
     @Test func storeRoundTripsCacheCreationCategories() throws {

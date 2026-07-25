@@ -52,22 +52,79 @@ public sealed record UsageFilter(string Range = "30d", UsageProvider? Provider =
 
 public static class UsagePricing
 {
-    public const string Version = "2026-07-01";
+    public const string Version = "2026-07-25-codex";
 
     public static UsageCost Cost(string? model, UsageTokens tokens)
     {
         if (string.IsNullOrWhiteSpace(model)) return new(null, UsageCostProvenance.Unavailable);
         var normalized = model.ToLowerInvariant();
-        (double Input, double Cached, double Output)? rates = normalized.Contains("claude", StringComparison.Ordinal)
-            ? normalized.Contains("opus", StringComparison.Ordinal) ? (15, 1.5, 75)
-            : normalized.Contains("haiku", StringComparison.Ordinal) ? (0.8, 0.08, 4)
-            : (3, 0.3, 15)
-            : normalized.Contains("gpt", StringComparison.Ordinal) || normalized.Contains("o3", StringComparison.Ordinal) || normalized.Contains("codex", StringComparison.Ordinal)
-                ? normalized.Contains("mini", StringComparison.Ordinal) ? (1.1, 0.11, 4.4) : (2.5, 0.25, 10)
-                : null;
+        if (normalized.StartsWith("openai/", StringComparison.Ordinal))
+            normalized = normalized["openai/".Length..];
+        if (normalized.EndsWith("-chat-latest", StringComparison.Ordinal))
+            normalized = normalized[..^"-chat-latest".Length];
+
+        (double Input, double Cached, double Output)? rates = null;
+        if (normalized.Contains("claude", StringComparison.Ordinal))
+        {
+            if (normalized.Contains("opus", StringComparison.Ordinal))
+                rates = (5, 0.5, 25); // opus-5 / 4.5+ family
+            else if (normalized.Contains("haiku", StringComparison.Ordinal))
+                rates = (1, 0.1, 5);
+            else if (normalized.Contains("fable", StringComparison.Ordinal) || normalized.Contains("mythos", StringComparison.Ordinal))
+                rates = (10, 1, 50);
+            else if (normalized.Contains("sonnet-5", StringComparison.Ordinal) || normalized.Contains("sonnet_5", StringComparison.Ordinal))
+                rates = (2, 0.2, 10); // Sonnet 5 intro pricing (models.dev / Anthropic through 2026-08-31)
+            else
+                rates = (3, 0.3, 15); // sonnet-4.x
+        }
+        else if (normalized.Contains("gpt", StringComparison.Ordinal) || normalized.Contains("o3", StringComparison.Ordinal) || normalized.Contains("codex", StringComparison.Ordinal))
+        {
+            rates = ResolveCodexRates(normalized);
+        }
         if (rates is not { } price) return new(null, UsageCostProvenance.Unavailable);
-        var usd = (tokens.Input * price.Input + tokens.CachedInput * price.Cached + tokens.Output * price.Output) / 1_000_000d;
+
+        // Codex reports cached input as a subset of input; Claude reports them separately.
+        double usd;
+        if (normalized.Contains("claude", StringComparison.Ordinal))
+        {
+            usd = (tokens.Input * price.Input + tokens.CachedInput * price.Cached + tokens.Output * price.Output) / 1_000_000d;
+        }
+        else
+        {
+            var cached = Math.Min(tokens.CachedInput, tokens.Input);
+            var normal = tokens.Input - cached;
+            usd = (normal * price.Input + cached * price.Cached + tokens.Output * price.Output) / 1_000_000d;
+        }
         return new(usd, UsageCostProvenance.Calculated, Version);
+    }
+
+    /// LiteLLM / models.dev base rates (USD per 1M). Long-context tiers omitted to match ccgauge.
+    private static (double Input, double Cached, double Output) ResolveCodexRates(string normalized)
+    {
+        if (normalized.Contains("pro", StringComparison.Ordinal))
+        {
+            if (normalized.Contains("5.4", StringComparison.Ordinal) || normalized.Contains("5.5", StringComparison.Ordinal))
+                return (30, 30, 180);
+            return (15, 15, 120); // gpt-5-pro
+        }
+        if (normalized.Contains("5.6-luna", StringComparison.Ordinal))
+            return (1, 0.1, 6);
+        if (normalized.Contains("5.6-terra", StringComparison.Ordinal))
+            return (2.5, 0.25, 15);
+        if (normalized.Contains("5.5", StringComparison.Ordinal) || normalized.Contains("5.6", StringComparison.Ordinal))
+            return (5, 0.5, 30);
+        if (normalized.Contains("5.4-mini", StringComparison.Ordinal))
+            return (0.75, 0.075, 4.5);
+        if (normalized.Contains("5.4-nano", StringComparison.Ordinal))
+            return (0.2, 0.02, 1.25);
+        if (normalized.Contains("5.4", StringComparison.Ordinal))
+            return (2.5, 0.25, 15);
+        if (normalized.Contains("5.3", StringComparison.Ordinal) || normalized.Contains("5.2", StringComparison.Ordinal))
+            return (1.75, 0.175, 14);
+        if (normalized.Contains("mini", StringComparison.Ordinal) || normalized.Contains("nano", StringComparison.Ordinal))
+            return (0.25, 0.025, 2);
+        // gpt-5 / gpt-5-codex / gpt-5.1*
+        return (1.25, 0.125, 10);
     }
 }
 
@@ -295,7 +352,8 @@ public sealed class LocalUsageIndex
             }
             var record = new UsageRecord(sourceId, UsageProvider.Claude, session, Date(root, fallbackDate), model, tokens, UsagePricing.Cost(model, tokens));
             if (dedupeKey is null) unkeyed.Add(record);
-            else keyed[dedupeKey] = record;
+            else if (!keyed.TryGetValue(dedupeKey, out var existing) || record.OccurredAt < existing.OccurredAt)
+                keyed[dedupeKey] = record; // ccgauge earliest-wins
         }
         return keyed.Values.Concat(unkeyed).OrderBy(record => record.OccurredAt).ToArray();
     }
