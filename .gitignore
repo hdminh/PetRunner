@@ -7,3 +7,10 @@ outputs/
 **/obj/
 .DS_Store
 *.tgz
+PetRunner
+.claude-workspace/workflow-state
+.idea
+.release-0.2.1.fi6rYu
+.release-assets.rZyKJ5
+.sisyphus/run-continuation
+node_modules
