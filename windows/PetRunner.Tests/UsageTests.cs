@@ -7,6 +7,7 @@ internal static class UsageTests
     public static void Run()
     {
         CodexCumulativeCountersBecomeDeltas();
+        CodexCostUsesBaseRatesWithoutDoubleBillingCache();
         ClaudeUsageAndSessionsAggregate();
         ClaudeStreamingChunksDedupLastWins();
         FiltersByRangeProviderAndModel();
@@ -28,6 +29,19 @@ internal static class UsageTests
         Check.Equal(10L, records[1].Tokens.Total);
         Check.True(records.All(record => record.Model == "gpt-5-codex"), "Token records should inherit the preceding file/session model");
         Check.True(records.All(record => record.Cost.Usd is > 0), "Known Codex models should receive local cost estimates");
+    }
+
+    private static void CodexCostUsesBaseRatesWithoutDoubleBillingCache()
+    {
+        // 60 non-cached * 1.25e-6 + 40 cached * 1.25e-7 + 5 out * 1e-5 = 0.00013
+        var tokens = new UsageTokens(100, 40, 5, 0);
+        var direct = UsagePricing.Cost("gpt-5-codex", tokens);
+        var chatLatest = UsagePricing.Cost("gpt-5.3-chat-latest", new UsageTokens(1_000_000, 0, 0, 0));
+        Check.True(direct.Usd is { } usd && Math.Abs(usd - 0.00013) < 1e-9, $"gpt-5-codex cache split expected 0.00013, got {direct.Usd}");
+        Check.True(chatLatest.Usd is { } latest && Math.Abs(latest - 1.75) < 1e-9, $"gpt-5.3-chat-latest expected $1.75/M, got {chatLatest.Usd}");
+        // Long-context gpt-5.5 still base $5/M (no 272k surcharge).
+        var longContext = UsagePricing.Cost("gpt-5.5", new UsageTokens(300_000, 0, 0, 0));
+        Check.True(longContext.Usd is { } longUsd && Math.Abs(longUsd - 1.5) < 1e-9, $"gpt-5.5 long context expected 1.5, got {longContext.Usd}");
     }
 
     private static void ClaudeUsageAndSessionsAggregate()

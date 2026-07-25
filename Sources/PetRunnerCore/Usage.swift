@@ -601,7 +601,7 @@ public enum BundledPricing {
     /// Offline baseline aligned with models.dev / LiteLLM (no long-context
     /// surcharge tiers, matching ccgauge `costFromUsage`). Remote refresh via
     /// `PricingCatalogStore` layers newer model ids + rates on top.
-    public static let bundledVersion = "2026-07-25-models"
+    public static let bundledVersion = "2026-07-25-codex"
 
     /// Active catalog version (bundled, or bundled + remote overlay stamp).
     /// Included in historical parser receipts so pricing refreshes rebuild costs.
@@ -899,11 +899,23 @@ public enum BundledPricing {
     private static func normalizeCodexModel(_ model: String) -> String {
         var model = model.hasPrefix("openai/") ? String(model.dropFirst("openai/".count)) : model
         if model == "gpt-5.6" { return "gpt-5.6-sol" }
+        // models.dev ChatGPT aliases (gpt-5.3-chat-latest → gpt-5.3 → gpt-5.3-codex).
+        if model.hasSuffix("-chat-latest") {
+            model = String(model.dropLast("-chat-latest".count))
+        }
         if let dateRange = model.range(of: #"-\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) {
             let base = String(model[..<dateRange.lowerBound])
-            if codexRates[base] != nil || PricingCatalogStore.shared.codexOverlay(for: base) != nil { model = base }
+            if knownCodexRate(base) { model = base }
+        }
+        if !knownCodexRate(model), !model.hasSuffix("-codex") {
+            let codexVariant = "\(model)-codex"
+            if knownCodexRate(codexVariant) { return codexVariant }
         }
         return model
+    }
+
+    private static func knownCodexRate(_ id: String) -> Bool {
+        codexRates[id] != nil || PricingCatalogStore.shared.codexOverlay(for: id) != nil
     }
 
     private static func normalizeClaudeModel(_ model: String) -> String {

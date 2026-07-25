@@ -172,7 +172,7 @@ struct UsageTests {
         #expect(approximatelyEqual(direct.usd, 0.0004185))
         #expect(vertexAlias == direct)
         #expect(direct.pricingVersion == BundledPricing.version)
-        #expect(BundledPricing.version.contains("2026-07-25-models"))
+        #expect(BundledPricing.version.contains("2026-07-25-codex"))
     }
 
     @Test func codexPricingDoesNotDoubleBillCachedInputAndRecognizesDatedAlias() {
@@ -182,6 +182,21 @@ struct UsageTests {
 
         #expect(approximatelyEqual(direct.usd, 0.00013))
         #expect(dated == direct)
+    }
+
+    @Test func codexChatLatestAndLongContextUseBaseLiteLLMRates() {
+        PricingCatalogStore.shared.resetForTesting()
+        // gpt-5.3-chat-latest must NOT fall through to gpt-5.5 ($5/$30).
+        let million = UsageTokenBreakdown(input: 1_000_000)
+        let chatLatest = BundledPricing.cost(model: "gpt-5.3-chat-latest", tokens: million)
+        let codex = BundledPricing.cost(model: "gpt-5.3-codex", tokens: million)
+        #expect(approximatelyEqual(chatLatest.usd, 1.75))
+        #expect(chatLatest == codex)
+
+        // gpt-5.5 list has a 272k long-context tier; ccgauge bills base $5/M only.
+        let longContext = UsageTokenBreakdown(input: 300_000)
+        #expect(approximatelyEqual(BundledPricing.cost(model: "gpt-5.5", tokens: longContext).usd, 1.5))
+        #expect(approximatelyEqual(BundledPricing.cost(model: "gpt-5.2-chat-latest", tokens: million).usd, 1.75))
     }
 
     @Test func codexReasoningIsDisplayedButNotBilledTwice() {

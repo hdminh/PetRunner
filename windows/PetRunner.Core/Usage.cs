@@ -52,12 +52,17 @@ public sealed record UsageFilter(string Range = "30d", UsageProvider? Provider =
 
 public static class UsagePricing
 {
-    public const string Version = "2026-07-25-models";
+    public const string Version = "2026-07-25-codex";
 
     public static UsageCost Cost(string? model, UsageTokens tokens)
     {
         if (string.IsNullOrWhiteSpace(model)) return new(null, UsageCostProvenance.Unavailable);
         var normalized = model.ToLowerInvariant();
+        if (normalized.StartsWith("openai/", StringComparison.Ordinal))
+            normalized = normalized["openai/".Length..];
+        if (normalized.EndsWith("-chat-latest", StringComparison.Ordinal))
+            normalized = normalized[..^"-chat-latest".Length];
+
         (double Input, double Cached, double Output)? rates = null;
         if (normalized.Contains("claude", StringComparison.Ordinal))
         {
@@ -74,13 +79,52 @@ public static class UsagePricing
         }
         else if (normalized.Contains("gpt", StringComparison.Ordinal) || normalized.Contains("o3", StringComparison.Ordinal) || normalized.Contains("codex", StringComparison.Ordinal))
         {
-            rates = normalized.Contains("mini", StringComparison.Ordinal) || normalized.Contains("nano", StringComparison.Ordinal)
-                ? (0.25, 0.025, 2)
-                : (5, 0.5, 30); // gpt-5.5-class fallback
+            rates = ResolveCodexRates(normalized);
         }
         if (rates is not { } price) return new(null, UsageCostProvenance.Unavailable);
-        var usd = (tokens.Input * price.Input + tokens.CachedInput * price.Cached + tokens.Output * price.Output) / 1_000_000d;
+
+        // Codex reports cached input as a subset of input; Claude reports them separately.
+        double usd;
+        if (normalized.Contains("claude", StringComparison.Ordinal))
+        {
+            usd = (tokens.Input * price.Input + tokens.CachedInput * price.Cached + tokens.Output * price.Output) / 1_000_000d;
+        }
+        else
+        {
+            var cached = Math.Min(tokens.CachedInput, tokens.Input);
+            var normal = tokens.Input - cached;
+            usd = (normal * price.Input + cached * price.Cached + tokens.Output * price.Output) / 1_000_000d;
+        }
         return new(usd, UsageCostProvenance.Calculated, Version);
+    }
+
+    /// LiteLLM / models.dev base rates (USD per 1M). Long-context tiers omitted to match ccgauge.
+    private static (double Input, double Cached, double Output) ResolveCodexRates(string normalized)
+    {
+        if (normalized.Contains("pro", StringComparison.Ordinal))
+        {
+            if (normalized.Contains("5.4", StringComparison.Ordinal) || normalized.Contains("5.5", StringComparison.Ordinal))
+                return (30, 30, 180);
+            return (15, 15, 120); // gpt-5-pro
+        }
+        if (normalized.Contains("5.6-luna", StringComparison.Ordinal))
+            return (1, 0.1, 6);
+        if (normalized.Contains("5.6-terra", StringComparison.Ordinal))
+            return (2.5, 0.25, 15);
+        if (normalized.Contains("5.5", StringComparison.Ordinal) || normalized.Contains("5.6", StringComparison.Ordinal))
+            return (5, 0.5, 30);
+        if (normalized.Contains("5.4-mini", StringComparison.Ordinal))
+            return (0.75, 0.075, 4.5);
+        if (normalized.Contains("5.4-nano", StringComparison.Ordinal))
+            return (0.2, 0.02, 1.25);
+        if (normalized.Contains("5.4", StringComparison.Ordinal))
+            return (2.5, 0.25, 15);
+        if (normalized.Contains("5.3", StringComparison.Ordinal) || normalized.Contains("5.2", StringComparison.Ordinal))
+            return (1.75, 0.175, 14);
+        if (normalized.Contains("mini", StringComparison.Ordinal) || normalized.Contains("nano", StringComparison.Ordinal))
+            return (0.25, 0.025, 2);
+        // gpt-5 / gpt-5-codex / gpt-5.1*
+        return (1.25, 0.125, 10);
     }
 }
 
