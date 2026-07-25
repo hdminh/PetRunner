@@ -1,14 +1,16 @@
 # PetRunner
 
-Local desktop pet for Codex-compatible custom pets, with an optional Agent
-Monitor bubble (macOS), under-pet quota HP bar, and a local usage dashboard.
-It reads `${CODEX_HOME:-~/.codex}/pets` and never starts, embeds, or connects
-to Codex.
+Local desktop pet runner and usage dashboard for Codex-compatible custom pets.
+Use the same pets while you work with Claude, Cursor, or Codex—PetRunner never
+starts, embeds, or connects to Codex. It also tracks local usage and spend,
+shows under-pet Quota Bar remaining daily / monthly / plan meters, and (on
+macOS) an optional Agent Monitor bubble. Default library:
+`${CODEX_HOME:-~/.codex}/pets`.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/hero.png" alt="PetRunner desktop pet with Agent Monitor bubble and quota HP bars" height="420" />
-  &nbsp;&nbsp;
-  <img src="https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/hero-collapsed.png" alt="PetRunner with collapsed heart quota meter" height="420" />
+  <img src="https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/hero.png" alt="PetRunner desktop pet with Agent Monitor bubble and Quota Bars" height="420" />
+    &nbsp;&nbsp;
+  <img src="https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/hero-collapsed.png" alt="PetRunner with collapsed heart Quota Bar meter" height="420" />
 </p>
 
 Source: [github.com/hdminh/PetRunner](https://github.com/hdminh/PetRunner)
@@ -21,7 +23,10 @@ npx @hdminh/pet-runner start
 
 On a TTY, the CLI asks for pets directory, which pet to show, Agent Monitor
 (macOS), which providers feed Usage/Analytics, autonomous motion, and menu
-bar / tray visibility (menu bar icon on macOS) before building. Use `--yes`
+bar / tray visibility (menu bar icon on macOS) before building. Claude- or
+Cursor-only setups: pick or create a pets directory (or keep the default),
+enable the providers you actually use, then open the Dashboard—usage stays
+empty until local sessions (or Cursor login on macOS) exist. Use `--yes`
 to skip the wizard, `--setup` to run it again, or
 `npx @hdminh/pet-runner setup` on its own.
 
@@ -51,32 +56,35 @@ source-build fallback, Agent Monitor details, and troubleshooting.
 
 ## Pets
 
-Default library: `${CODEX_HOME:-~/.codex}/pets`.
+Codex-format pet packages render locally whether you use Claude, Cursor, or
+Codex—you do not need Codex installed. Default library:
+`${CODEX_HOME:-~/.codex}/pets` (override with `--pets-dir` or the setup wizard).
 
 On first launch PetRunner seeds the bundled **maomao** pet when that package is
 missing and prefers it when nothing else is selected.
 
-- Download more pets from [pet-runner.com](https://pet-runner.com)
+- Download more pets from [pet-runner.com](https://pet-runner.com) (any provider)
 - Import a ZIP (or folder) from the **Pets** tab
-- Or install with Petdex / `npx codex-pets add <id>`
+- Or, if you already use Codex pets: Petdex / `npx codex-pets add <id>`
 
 Drag the pet to move it, throw it toward a screen edge, hover or click to jump,
 or drag the lower-right handle to resize. Use the menu-bar / tray paw (or the
-pet’s context menu) to open the Dashboard, enable Agent Monitor (macOS), show
-or mode the Quota Bar, reload pets, change size, toggle autonomous motion, or
-quit.
+pet’s context menu) to open the Dashboard, enable Agent Monitor (macOS),
+show/hide or set Quota Bar mode, reload pets, change size, toggle autonomous
+motion, or quit.
 
-The under-pet **Quota Bar** shows remaining daily / monthly / plan usage for the
-active Monitor provider (Show / Auto / Daily / Monthly / Plan from the paw menu
-or the Dashboard Monitor tab). It works on macOS and Windows; collapse the bars
-to a heart meter on macOS.
+The under-pet **Quota Bar** shows remaining daily / monthly / plan usage
+(Show / Auto / Daily / Monthly / Plan from the paw menu or the Dashboard
+Monitor tab). On macOS it follows the active Agent Monitor provider; on Windows
+it follows the enabled Claude/Codex usage provider (budget modes). Plan meters
+are macOS-only today. Collapse the bars to a heart meter on macOS.
 
 ## Dashboard
 
 Open the Dashboard from the menu bar / tray icon, Applications (macOS), or the
-pet’s context menu. Usage indexes local Claude / Codex / Cursor session files on
-this device. Cursor spend (when enabled) comes from Cursor’s usage API using the
-local Cursor.app login; Cursor Usage/Analytics is macOS-only today.
+pet’s context menu. Claude and Codex usage come from local session files on this
+device. Cursor spend and analytics (when enabled) come from Cursor’s usage API
+using the local Cursor.app login—Cursor Usage/Analytics is macOS-only today.
 
 When Agent Monitor is enabled (macOS), the top bar shows today’s spend for the
 active Monitor provider.
@@ -91,7 +99,7 @@ volume, and an activity heatmap of when you usually work.
 ### Providers
 
 Per-provider **Usage** and **Pricing** panels, spend charts, model breakdowns,
-plan quota meters, and daily / monthly budgets.
+daily / monthly budgets, and (macOS) plan quota meters.
 
 ![Providers usage](https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/providers.png)
 
@@ -132,11 +140,18 @@ Windows.
 
 Claude and Codex spend are calculated from local session files on this device.
 Cursor spend is imported from Cursor’s usage API using the local Cursor.app
-login cookie when Cursor reports it. Optional plan-quota meters make
+login cookie when Cursor reports it. Optional plan-quota meters (macOS) make
 authenticated requests to Anthropic / ChatGPT / Cursor using credentials already
-on the machine (Claude: `~/.claude` credentials file and, only on explicit
-Refresh Usage, Claude Code Keychain on macOS); PetRunner does not send those
-credentials to PetRunner servers. Computed ledgers and indexes stay local.
+on the machine: Claude from `~/.claude` (and, only on explicit Refresh Usage,
+Claude Code Keychain on macOS—then PetRunner may cache the OAuth blob under
+Application Support for silent reuse); Codex/ChatGPT from `~/.codex/auth.json`;
+Cursor from the local Cursor.app login token. PetRunner does not send those
+credentials to PetRunner servers.
+
+Usage/Analytics extract local spend/token rows and limited session metadata
+(truncated title, project path/name, model, timestamps) into on-device
+ledgers and indexes. They do not retain full prompts, transcripts, tool
+output, or raw session payloads. Computed ledgers and indexes stay local.
 
 Agent Monitor never retains or displays prompts, tool output, full commands,
 raw payloads, or transcripts. Derived activity labels (file basename, search
