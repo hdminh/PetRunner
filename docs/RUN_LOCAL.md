@@ -171,6 +171,11 @@ From the repository root, build and run PetRunner:
 .\script\build_and_run.ps1
 ```
 
+The script builds `DashboardWeb` first (`npm run dashboard:build`), then runs the
+Windows host. Tray → **Open Pets…** opens the WebView2 Pets window (library,
+preview, import). WebView2 Runtime is required (preinstalled on most Windows
+10/11 systems).
+
 Keep the PowerShell window open while PetRunner is running. Quit PetRunner from
 its tray menu or press `Ctrl+C` in the PowerShell window.
 

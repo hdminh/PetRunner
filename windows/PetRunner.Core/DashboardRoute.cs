@@ -9,6 +9,7 @@ public enum DashboardRouteKind
     Sessions,
     Session,
     PetPreview,
+    PetSpritesheet,
     RefreshUsage,
     Pet,
     Autonomy,
@@ -23,7 +24,18 @@ public enum DashboardRouteKind
 
 public readonly record struct DashboardRoute(DashboardRouteKind Kind, string? Value = null)
 {
-    private static readonly HashSet<string> Assets = ["index.html", "styles.css", "app.js"];
+    /// <summary>Flat files Vite copies from DashboardWeb/public/ plus the HTML shell.</summary>
+    private static readonly HashSet<string> Assets =
+    [
+        "index.html",
+        "favicon.svg",
+        "favicon-32.png",
+        "favicon-48.png",
+        "apple-touch-icon.png",
+        // Legacy non-Vite shell (kept for older layouts / tests).
+        "styles.css",
+        "app.js",
+    ];
 
     public static DashboardRoute Parse(string absolutePath, string token)
     {
@@ -33,14 +45,14 @@ public readonly record struct DashboardRoute(DashboardRouteKind Kind, string? Va
             (absolutePath.Length > prefix.Length && absolutePath[prefix.Length] != '/')) return new(DashboardRouteKind.NotFound);
         var relative = absolutePath[prefix.Length..].TrimStart('/');
         if (relative.Length == 0) return new(DashboardRouteKind.Asset, "index.html");
-        if (Assets.Contains(relative)) return new(DashboardRouteKind.Asset, relative);
+        if (IsAllowedAsset(relative)) return new(DashboardRouteKind.Asset, relative);
 
         const string api = "api/v1/";
         if (!relative.StartsWith(api, StringComparison.Ordinal)) return new(DashboardRouteKind.NotFound);
         var endpoint = relative[api.Length..].TrimEnd('/');
         return endpoint switch
         {
-            "state" => new(DashboardRouteKind.State),
+            "state" or "overview" => new(DashboardRouteKind.State),
             "usage" => new(DashboardRouteKind.Usage),
             "sessions" => new(DashboardRouteKind.Sessions),
             "usage/refresh" => new(DashboardRouteKind.RefreshUsage),
@@ -56,10 +68,22 @@ public readonly record struct DashboardRoute(DashboardRouteKind Kind, string? Va
                 ValueRoute(DashboardRouteKind.Session, endpoint["sessions/".Length..]),
             _ when endpoint.StartsWith("pets/", StringComparison.Ordinal) && endpoint.EndsWith("/preview", StringComparison.Ordinal) =>
                 ValueRoute(DashboardRouteKind.PetPreview, endpoint["pets/".Length..^"/preview".Length]),
+            _ when endpoint.StartsWith("pets/", StringComparison.Ordinal) && endpoint.EndsWith("/spritesheet", StringComparison.Ordinal) =>
+                ValueRoute(DashboardRouteKind.PetSpritesheet, endpoint["pets/".Length..^"/spritesheet".Length]),
             _ when endpoint.StartsWith("pets/", StringComparison.Ordinal) && endpoint.Length > "pets/".Length && !endpoint["pets/".Length..].Contains('/') =>
                 ValueRoute(DashboardRouteKind.DeletePet, endpoint["pets/".Length..]),
             _ => new(DashboardRouteKind.NotFound),
         };
+    }
+
+    private static bool IsAllowedAsset(string relative)
+    {
+        if (relative.Contains("..", StringComparison.Ordinal) || relative.Contains('\\')) return false;
+        var parts = relative.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Any(part => part is "." or "..")) return false;
+        if (Assets.Contains(relative)) return true;
+        // Vite hashed bundles: assets/<file>
+        return relative.StartsWith("assets/", StringComparison.Ordinal) && parts.Length == 2;
     }
 
     private static DashboardRoute ValueRoute(DashboardRouteKind kind, string encoded)

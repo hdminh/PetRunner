@@ -8,18 +8,20 @@ PetRunner
 
 PetRunner mang các thú cưng pixel tương thích lên màn hình Windows của bạn. Chọn một pet từ thư viện cục bộ, sau đó để pet ngồi, di chuyển, nhảy và phản ứng trong khi bạn làm việc.
 
-Dùng biểu tượng PetRunner trong khay hệ thống để đổi pet, chọn kích thước phù hợp, tải lại bộ sưu tập hoặc đặt lại vị trí của pet. Bạn có thể kéo pet đến bất kỳ đâu trên màn hình, ném pet về phía cạnh màn hình, bấm vào pet để pet nhảy và thay đổi kích thước bằng tay nắm ở góc dưới bên phải.
+Dùng biểu tượng PetRunner trong khay hệ thống để đổi pet, chọn kích thước phù hợp, tải lại bộ sưu tập hoặc đặt lại vị trí của pet. Mở Pets từ khay để xem trước thư viện, nhập gói pet và chỉnh cài đặt tự động. Bạn có thể kéo pet đến bất kỳ đâu trên màn hình, ném pet về phía cạnh màn hình, bấm vào pet để pet nhảy và thay đổi kích thước bằng tay nắm ở góc dưới bên phải.
 
-Để màn hình sinh động hơn giữa các phiên làm việc, hãy bật Thú cưng tự động và chọn các hành động cũng như tần suất diễn ra. PetRunner là trình hiển thị desktop độc lập: ứng dụng đọc thư viện pet tương thích trên máy của bạn và không khởi chạy, nhúng hoặc kết nối với Codex.
+Để màn hình sinh động hơn giữa các phiên làm việc, hãy bật Thú cưng tự động và chọn các hành động cũng như tần suất diễn ra. Tải thêm pet từ pet-runner.com rồi nhập vào thư viện cục bộ. PetRunner là trình hiển thị desktop độc lập: ứng dụng đọc thư viện pet tương thích trên máy của bạn và không khởi chạy, nhúng hoặc kết nối với Codex.
 
 ## Có gì mới trong phiên bản này
 
-Phiên bản phát hành đầu tiên trên Microsoft Store.
+Đóng gói sẵn pet mặc định (maomao) để companion hiện ngay lần mở app đầu tiên, không cần import gói.
 
 ## Tính năng sản phẩm
 
 - Hiển thị pet pixel tương thích dưới dạng lớp phủ nhẹ trên desktop
 - Chọn và tải lại pet từ thư viện pet cục bộ
+- Mở Pets để xem trước, nhập và quản lý gói pet
+- Tải thêm pet từ pet-runner.com
 - Kéo, ném, bấm và thay đổi kích thước pet
 - Chọn kích thước Nhỏ, Vừa, Lớn hoặc XL
 - Bật các hành động tự động Đi bộ, Vẫy tay, Nhảy và Khóc
@@ -74,7 +76,7 @@ hdminh
 
 1. `screenshot-01-desktop-overlay.png` — Pet trên desktop và các điều khiển trong khay hệ thống
 2. `screenshot-02-pet-picker.png` — Đổi hoặc tải lại pet từ khay hệ thống
-3. `screenshot-03-settings.png` — Cài đặt Thú cưng tự động
+3. `screenshot-03-settings.png` — Cửa sổ Open Pets (thư viện, xem trước, nhập)
 4. `screenshot-04-resize.png` — Di chuyển và thay đổi kích thước pet
 
 Tất cả là tệp PNG 1366 × 768 trong cùng thư mục này.

@@ -18,15 +18,16 @@ limited to provider plan-quota and pricing-catalog refresh.
 - `DashboardWeb/`: Vite/React UI served by the local loopback dashboard API.
 - `Tests/PetRunnerCoreTests/`: Swift Testing coverage for the macOS core.
 - `windows/PetRunner.Core/`: Windows counterpart of the pet/usage core.
-- `windows/PetRunner.Windows/`: Windows 10/11 WPF tray, overlay, and dashboard
-  host.
+- `windows/PetRunner.Windows/`: Windows 10/11 WPF tray, overlay, WebView2 Pets
+  window, and loopback dashboard host (Store cut is pets-only).
 - `windows/PetRunner.Tests/`: self-hosted .NET test executable.
 - `bin/` and `lib/`: Node 18+ npm CLI that installs/builds PetRunner locally.
 - `Support/Package.runtime.swift`: dependency-free SwiftPM manifest used only
   by the npm-installed runtime source. Keep it aligned with production targets
   in `Package.swift`, but do not add test-only dependencies to it.
-- `Assets/`: committed application icons. Regenerate deliberately with
-  `script/generate_app_icons.sh`; do not hand-edit generated icon formats.
+- `Assets/`: committed application icons and `DefaultPets/` packages. Regenerate
+  icons deliberately with `script/generate_app_icons.sh`; do not hand-edit
+  generated icon formats.
 - `docs/solutions/` — documented solutions to past problems (bugs, best
   practices, workflow patterns), organized by category with YAML frontmatter
   (`module`, `tags`, `problem_type`). Relevant when implementing or debugging
@@ -39,19 +40,28 @@ limited to provider plan-quota and pricing-catalog refresh.
 ## Platform capability matrix
 
 Keep macOS and Windows aligned for **parity core**. Treat everything else as
-**macOS-advanced** until it is explicitly ported.
+**macOS-advanced** until it is explicitly ported. The Windows Store / host cut
+ships a **pets-only** surface (WebView2 Pets window); usage and quota UI stay
+unwired there while Core parsers remain for a later embed.
 
 | Capability | macOS | Windows | Contract |
 |---|---|---|---|
 | Pet package load, atlas, animation, physics | Yes | Yes | Parity core |
 | `--pets-dir` / `CODEX_HOME` default library | Yes | Yes | Parity core |
 | User-initiated pet import / replace / delete | Yes | Yes | Parity core |
-| Local loopback dashboard + Usage (Claude/Codex spend) | Yes | Yes | Parity core |
-| Budget-based quota bar | Yes | Yes | Parity core |
+| Local loopback Pets library UI (preview / settings) | Yes | Yes (WebView2) | Parity core |
+| Usage / sessions / spend KPIs in dashboard | Yes | No (Store cut; Core retained) | macOS-first until re-enabled |
+| Budget-based quota bar | Yes | No (Store cut; Core retained) | macOS-first until re-enabled |
 | Agent Monitor (hooks, IPC, session history) | Yes | No | macOS-advanced (0.3.x) |
 | Cursor usage / analytics | Yes | No | macOS-advanced (0.3.x) |
 | Remote plan-quota windows | Yes | No | macOS-advanced (0.3.x) |
 | Pricing-catalog refresh (`models.dev` / LiteLLM) | Yes | Partial / none | Prefer host-layer HTTP; do not silently expand Core networking |
+
+**Windows pets-only host:** tray + overlay + WebView2 `#/pets`. Advertise
+`capabilities.usage` / `sessions` / `agentMonitor` false. Seed `DefaultPets/*`
+with path-safe package ids. Package `DashboardWeb/dist` after
+`npm run dashboard:build`. See
+`docs/solutions/architecture-patterns/windows-store-pet-only-host.md`.
 
 **Monitor port strategy (0.3.x):** Agent Monitor stays macOS-only. Do not start a
 partial Windows port. When porting later, share the normalized event protocol
@@ -91,7 +101,9 @@ ignored. The top-level `bin/` directory is npm CLI source and is committed.
 ## Behavioral contracts
 
 - Validate pet packages defensively. Never follow a spritesheet symlink outside
-  its pet package.
+  its pet package. Never join a pet id into the pets directory without rejecting
+  empty, `.`, `..`, separators, and rooted/absolute values, then containing the
+  resolved destination under the pets root.
 - Keep macOS and Windows behavior aligned for **parity core** (parsing,
   sprite-atlas addressing, animation timing, physics, pointer tracking, CLI
   pets-dir arguments, import/remove validation). Add/adjust tests on both
@@ -112,6 +124,9 @@ ignored. The top-level `bin/` directory is npm CLI source and is committed.
   (`DashboardPetsHandler`, `DashboardUsageHandler`, `DashboardMonitorHandler`,
   `DashboardSettingsHandler`) behind `DashboardAPIDependencies`. Prefer
   extending those files over growing a single god object again.
+- Windows Store packaging scripts must build and ship `DashboardWeb/dist` (not
+  Vite sources). WebView2 Pets navigations stay on loopback http(s); mutation
+  requests require Origin or `Sec-Fetch-Site: same-origin`, not Referer alone.
 
 ## npm CLI and release rules
 

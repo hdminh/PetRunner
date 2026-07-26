@@ -52,6 +52,53 @@ internal static class PetImportTests
             var installer = new DefaultPetInstaller();
             Check.True(installer.InstallIfMissing(bundled, seedPets), "first seed should copy");
             Check.True(!installer.InstallIfMissing(bundled, seedPets), "second seed should no-op");
+
+            var bundledRoot = Path.Combine(root, "DefaultPets");
+            var misty = Path.Combine(bundledRoot, "misty");
+            var broken = Path.Combine(bundledRoot, "broken");
+            Directory.CreateDirectory(misty);
+            Directory.CreateDirectory(broken);
+            WritePet(misty, "misty");
+            File.WriteAllText(Path.Combine(broken, "pet.json"), "{\"id\":\"broken\"}");
+            var multiPets = Path.Combine(root, "multi-pets");
+            Check.Equal(1, installer.InstallAllMissing(bundledRoot, multiPets));
+            Check.True(File.Exists(Path.Combine(multiPets, "misty", "pet.json")), "misty should install from DefaultPets root");
+            Check.True(!Directory.Exists(Path.Combine(multiPets, "broken")), "invalid package should be skipped");
+            Check.Equal(0, installer.InstallAllMissing(bundledRoot, multiPets));
+
+            var escapeCaught = false;
+            try
+            {
+                var escapePkg = Path.Combine(root, "escape-pkg");
+                Directory.CreateDirectory(escapePkg);
+                WritePet(escapePkg, "../escape");
+                installer.InstallIfMissing(escapePkg, multiPets);
+            }
+            catch (InvalidDataException)
+            {
+                escapeCaught = true;
+            }
+            Check.True(escapeCaught, "relative escape id must be rejected");
+            Check.True(!Directory.Exists(Path.GetFullPath(Path.Combine(multiPets, "..", "escape"))), "escape id must not create files outside pets dir");
+
+            var rootedCaught = false;
+            try
+            {
+                var rootedPkg = Path.Combine(root, "rooted-pkg");
+                Directory.CreateDirectory(rootedPkg);
+                WritePetWithRawId(rootedPkg, @"C:\petrunner-install-escape-test");
+                installer.InstallIfMissing(rootedPkg, multiPets);
+            }
+            catch (InvalidDataException)
+            {
+                rootedCaught = true;
+            }
+            Check.True(rootedCaught, "rooted pet id must be rejected");
+            Check.True(!Directory.Exists(@"C:\petrunner-install-escape-test"), "rooted id must not create an outside folder");
+
+            Check.True(
+                string.Equals("safe-pet", DefaultPetInstaller.RequireSafePetId("  safe-pet  "), StringComparison.Ordinal),
+                "valid ids should trim and pass");
         }
         finally
         {
@@ -61,9 +108,15 @@ internal static class PetImportTests
 
     private static void WritePet(string directory, string id)
     {
+        WritePetWithRawId(directory, id);
+    }
+
+    private static void WritePetWithRawId(string directory, string id)
+    {
+        var escaped = id.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
         File.WriteAllText(
             Path.Combine(directory, "pet.json"),
-            $"{{\"id\":\"{id}\",\"displayName\":\"{id}\",\"spritesheetPath\":\"spritesheet.webp\"}}");
+            $"{{\"id\":\"{escaped}\",\"displayName\":\"pet\",\"spritesheetPath\":\"spritesheet.webp\"}}");
         using var bitmap = new SKBitmap(1536, 1872);
         using var image = SKImage.FromBitmap(bitmap);
         using var data = image.Encode(SKEncodedImageFormat.Png, 100);

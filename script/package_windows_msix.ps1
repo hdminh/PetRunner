@@ -192,6 +192,18 @@ if (-not $SkipTests) {
     }
 }
 
+Write-Host "Building DashboardWeb assets..."
+Push-Location $Root
+try {
+    npm run dashboard:build
+    if ($LASTEXITCODE -ne 0) {
+        throw "dashboard:build failed with exit code $LASTEXITCODE"
+    }
+}
+finally {
+    Pop-Location
+}
+
 if (Test-Path $DistRoot) {
     Remove-Item $DistRoot -Recurse -Force
 }
@@ -221,6 +233,20 @@ foreach ($RuntimeIdentifier in $Runtime) {
     $exe = Join-Path $publishDir "PetRunner.exe"
     if (-not (Test-Path $exe)) {
         throw "PetRunner.exe was not produced for $RuntimeIdentifier"
+    }
+
+    # Store certification requires a visible default pet on first launch.
+    # Fail the pack early if the bundled maomao package did not publish.
+    $defaultPetJson = Join-Path $publishDir "DefaultPets\maomao\pet.json"
+    $defaultPetSheet = Join-Path $publishDir "DefaultPets\maomao\spritesheet.webp"
+    if (-not (Test-Path $defaultPetJson) -or -not (Test-Path $defaultPetSheet)) {
+        throw @"
+Bundled default pet is missing from publish output for $RuntimeIdentifier.
+Expected:
+  $defaultPetJson
+  $defaultPetSheet
+Without these files Store testers see an empty desktop on first launch.
+"@
     }
 
     if (Test-Path $layoutDir) { Remove-Item $layoutDir -Recurse -Force }

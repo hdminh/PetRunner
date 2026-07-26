@@ -11,6 +11,7 @@ public partial class App : System.Windows.Application
     private OverlayWindow? overlay;
     private TrayController? tray;
     private DashboardServer? dashboard;
+    private PetsWindow? petsWindow;
     private SingleInstanceBridge? singleInstance;
     private AppSettings settings = new();
     private string petsPath = "";
@@ -23,7 +24,7 @@ public partial class App : System.Windows.Application
     {
         var background = args.Args.Contains("--background", StringComparer.Ordinal);
         singleInstance = SingleInstanceBridge.TryBecomePrimary(
-            () => Dispatcher.BeginInvoke(new Action(OpenDashboard)),
+            () => Dispatcher.BeginInvoke(new Action(OpenPets)),
             activateExisting: !background);
         if (singleInstance is null)
         {
@@ -34,15 +35,26 @@ public partial class App : System.Windows.Application
         settings.ClaudeBudget ??= new ProviderBudgetSettings();
         settings.CodexBudget ??= new ProviderBudgetSettings();
         petsPath = ResolvePetsPath(args.Args);
-        InstallBundledDefaultPetIfNeeded();
+        InstallBundledDefaultPetsIfNeeded();
         overlay = new OverlayWindow();
         settings.SetAutonomyConfiguration(settings.GetAutonomyConfiguration());
         overlay.SetAutonomyEnabled(settings.AutonomyEnabled);
         overlay.SetAutonomyConfiguration(settings.GetAutonomyConfiguration());
-        tray = new TrayController(ChangePet, ChangeSize, Reload, ToggleAutonomy, TogglePetHidden, ToggleQuotaBarVisible, SetQuotaBarMode, ResetPosition, OpenDashboard, Quit);
+        // Clear any leftover quota overlay from older builds.
+        overlay.SetQuotaBarSegments([]);
+        tray = new TrayController(
+            ChangePet,
+            ChangeSize,
+            Reload,
+            ToggleAutonomy,
+            TogglePetHidden,
+            ResetPosition,
+            OpenPets,
+            DownloadMorePets,
+            Quit);
         Reload();
         StartDashboard();
-        if (!background) OpenDashboard();
+        if (!background) OpenPets();
     }
 
     private void Reload()
@@ -90,7 +102,6 @@ public partial class App : System.Windows.Application
                 SettingsStore.Save(settings);
             };
             SettingsStore.Save(settings);
-            RefreshQuotaBar();
         }
         catch (Exception error)
         {
@@ -103,7 +114,6 @@ public partial class App : System.Windows.Application
     {
         settings.Width = width;
         overlay?.SetWidth(width);
-        RefreshQuotaBar();
         SettingsStore.Save(settings);
         RefreshTray(settings.SelectedPetId);
     }
@@ -122,58 +132,6 @@ public partial class App : System.Windows.Application
         ApplyPetVisibility();
         SettingsStore.Save(settings);
         RefreshTray(settings.SelectedPetId);
-    }
-
-    private void ToggleQuotaBarVisible()
-    {
-        settings.QuotaBarVisible = !settings.QuotaBarVisible;
-        RefreshQuotaBar();
-        SettingsStore.Save(settings);
-        RefreshTray(settings.SelectedPetId);
-    }
-
-    private void SetQuotaBarMode(string mode)
-    {
-        settings.QuotaBarMode = mode;
-        if (!string.Equals(mode, "off", StringComparison.OrdinalIgnoreCase))
-            settings.QuotaBarVisible = true;
-        RefreshQuotaBar();
-        SettingsStore.Save(settings);
-        RefreshTray(settings.SelectedPetId);
-    }
-
-    private void RefreshQuotaBar()
-    {
-        if (overlay is null) return;
-        var provider = settings.ClaudeEnabled ? UsageProvider.Claude
-            : settings.CodexEnabled ? UsageProvider.Codex
-            : (UsageProvider?)null;
-        var budgetSettings = provider switch
-        {
-            UsageProvider.Claude => settings.ClaudeBudget,
-            UsageProvider.Codex => settings.CodexBudget,
-            _ => new ProviderBudgetSettings(),
-        };
-        var mode = settings.QuotaBarMode?.ToLowerInvariant() switch
-        {
-            "daily" => QuotaBarMode.Daily,
-            "monthly" => QuotaBarMode.Monthly,
-            "plan" => QuotaBarMode.Plan,
-            "off" => QuotaBarMode.Off,
-            _ => QuotaBarMode.Auto,
-        };
-        var result = QuotaBarResolver.Resolve(new QuotaBarResolveInput(
-            provider,
-            settings.QuotaBarVisible,
-            mode,
-            new QuotaBarBudget(budgetSettings.DailyUSD, budgetSettings.MonthlyUSD)));
-        if (result.SeededBudget is { } seeded && provider is { } seededProvider)
-        {
-            var target = seededProvider == UsageProvider.Claude ? settings.ClaudeBudget : settings.CodexBudget;
-            target.Update(seeded.DailyUSD, seeded.MonthlyUSD);
-            SettingsStore.Save(settings);
-        }
-        overlay.SetQuotaBarSegments(result.Segments);
     }
 
     private void ApplyPetVisibility()
@@ -208,12 +166,6 @@ public partial class App : System.Windows.Application
     {
         try
         {
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var codexRoot = Environment.GetEnvironmentVariable("CODEX_HOME");
-            if (string.IsNullOrWhiteSpace(codexRoot)) codexRoot = Path.Combine(home, ".codex");
-            var usage = new LocalUsageIndex(
-                codexRoot,
-                [Path.Combine(home, ".claude", "projects"), Path.Combine(home, ".config", "claude", "projects")]);
             var callbacks = new DashboardCallbacks(
                 () => Dispatcher.Invoke(CaptureDashboardState),
                 request => Dispatcher.Invoke(() => UpdatePet(request)),
@@ -224,7 +176,8 @@ public partial class App : System.Windows.Application
                 () => Dispatcher.Invoke(ChoosePetsDirectory),
                 () => Dispatcher.Invoke(RevealPetsDirectory),
                 request => Dispatcher.Invoke(() => UpdateSettings(request)));
-            dashboard = new DashboardServer(Path.Combine(AppContext.BaseDirectory, "DashboardWeb"), usage, callbacks);
+            // Pet-only Store cut: no LocalUsageIndex. Usage can be re-enabled later via WebView.
+            dashboard = new DashboardServer(Path.Combine(AppContext.BaseDirectory, "DashboardWeb"), callbacks);
             dashboard.Start();
         }
         catch (Exception error)
@@ -232,20 +185,41 @@ public partial class App : System.Windows.Application
             dashboard?.Dispose();
             dashboard = null;
             System.Windows.MessageBox.Show(
-                $"The local dashboard could not start.\n\n{error.Message}",
-                "PetRunner Dashboard",
+                $"The Pets window could not start.\n\n{error.Message}",
+                "PetRunner",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
         }
     }
 
-    private void OpenDashboard()
+    private void OpenPets()
     {
         if (dashboard is null) return;
-        try { Process.Start(new ProcessStartInfo(dashboard.DashboardUrl) { UseShellExecute = true }); }
+        try
+        {
+            if (petsWindow is null)
+            {
+                petsWindow = new PetsWindow(dashboard.PetsUrl, dashboard.Origin);
+                petsWindow.Closed += (_, _) => petsWindow = null;
+            }
+            petsWindow.Show();
+            petsWindow.Activate();
+        }
         catch (Exception error)
         {
-            System.Windows.MessageBox.Show(error.Message, "PetRunner Dashboard", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show(error.Message, "PetRunner", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private static void DownloadMorePets()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(DefaultPet.DownloadPetsUrl) { UseShellExecute = true });
+        }
+        catch (Exception error)
+        {
+            System.Windows.MessageBox.Show(error.Message, "PetRunner", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -256,8 +230,8 @@ public partial class App : System.Windows.Application
         settings.Width,
         settings.AutonomyEnabled,
         settings.PetHidden,
-        settings.QuotaBarVisible,
-        settings.QuotaBarMode,
+        false,
+        "off",
         settings.GetAutonomyConfiguration(),
         settings.ClaudeBudget,
         settings.CodexBudget,
@@ -324,39 +298,16 @@ public partial class App : System.Windows.Application
             ApplyPetVisibility();
             RefreshTray(settings.SelectedPetId);
         }
-        if (request.QuotaBarVisible is { } quotaBarVisible)
-        {
-            settings.QuotaBarVisible = quotaBarVisible;
-            RefreshQuotaBar();
-            RefreshTray(settings.SelectedPetId);
-        }
-        if (request.QuotaBarMode is { } quotaBarMode)
-        {
-            settings.QuotaBarMode = quotaBarMode;
-            if (!string.Equals(quotaBarMode, "off", StringComparison.OrdinalIgnoreCase))
-                settings.QuotaBarVisible = true;
-            RefreshQuotaBar();
-            RefreshTray(settings.SelectedPetId);
-        }
+        if (request.QuotaBarVisible is not null || request.QuotaBarMode is not null)
+            throw new DashboardApiException("unsupported_action", "Quota bar is not available in this PetRunner build.", 409);
         if (request.PetsDirectory is { } petsDirectory)
         {
             ApplyPetsDirectory(petsDirectory);
         }
-        if (request.Budgets is null)
-        {
-            if (request.PetsDirectory is not null || request.PetHidden is not null
-                || request.QuotaBarVisible is not null || request.QuotaBarMode is not null)
-            {
-                SettingsStore.Save(settings);
-            }
-            return;
-        }
-        if (request.Budgets.Cursor is { DailyUSD: not null } or { MonthlyUSD: not null })
-            throw new DashboardApiException("unsupported_action", "Cursor usage budgets are not available on Windows.", 409);
-        if (request.Budgets.Claude is { } claude) UpdateBudget(settings.ClaudeBudget, claude);
-        if (request.Budgets.Codex is { } codex) UpdateBudget(settings.CodexBudget, codex);
-        SettingsStore.Save(settings);
-        RefreshQuotaBar();
+        if (request.Budgets is not null)
+            throw new DashboardApiException("unsupported_action", "Usage budgets are not available in this PetRunner build.", 409);
+        if (request.PetsDirectory is not null || request.PetHidden is not null)
+            SettingsStore.Save(settings);
     }
 
     private object RemovePet(string id)
@@ -407,31 +358,22 @@ public partial class App : System.Windows.Application
         petsPath = Path.GetFullPath(trimmed);
         settings.PetsDirectory = petsPath;
         petsDirectorySource = "preference";
-        InstallBundledDefaultPetIfNeeded();
+        InstallBundledDefaultPetsIfNeeded();
         Reload();
     }
 
-    private void InstallBundledDefaultPetIfNeeded()
+    private void InstallBundledDefaultPetsIfNeeded()
     {
         try
         {
-            var bundled = Path.Combine(AppContext.BaseDirectory, DefaultPet.BundleRelativePath);
-            _ = new DefaultPetInstaller().InstallIfMissing(bundled, petsPath);
+            var bundledRoot = Path.Combine(AppContext.BaseDirectory, DefaultPet.BundleRootRelativePath);
+            _ = new DefaultPetInstaller().InstallAllMissing(bundledRoot, petsPath);
         }
         catch (Exception error)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to install bundled default pet: {error.Message}");
+            System.Diagnostics.Debug.WriteLine($"Failed to install bundled default pets: {error.Message}");
         }
     }
-
-    private static void UpdateBudget(ProviderBudgetSettings target, BudgetRequest request)
-    {
-        if (!ValidBudget(request.DailyUSD) || !ValidBudget(request.MonthlyUSD))
-            throw new DashboardApiException("invalid_budget", "Budgets must be positive USD values up to 1,000,000.");
-        target.Update(request.DailyUSD, request.MonthlyUSD);
-    }
-
-    private static bool ValidBudget(double? value) => value is null || double.IsFinite(value.Value) && value is > 0 and <= 1_000_000;
 
     private bool ImportPet()
     {
@@ -504,9 +446,7 @@ public partial class App : System.Windows.Application
             selectedId,
             settings.Width,
             settings.AutonomyEnabled,
-            settings.PetHidden,
-            settings.QuotaBarVisible,
-            settings.QuotaBarMode);
+            settings.PetHidden);
 
     private void Quit()
     {
@@ -515,6 +455,7 @@ public partial class App : System.Windows.Application
 
     private void OnExit(object sender, ExitEventArgs args)
     {
+        petsWindow?.Close();
         dashboard?.Dispose();
         overlay?.Dispose();
         tray?.Dispose();

@@ -42,6 +42,9 @@ internal static class Check
             throw new InvalidOperationException($"Expected {expected}, got {actual}");
     }
 
+    // Existing tests call Check.equal; keep a lowercase alias for compatibility.
+    public static void equal<T>(T expected, T actual) where T : notnull => Equal(expected, actual);
+
     public static void True(bool value, string message)
     {
         if (!value) throw new InvalidOperationException(message);

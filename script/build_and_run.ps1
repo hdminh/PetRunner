@@ -12,6 +12,15 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
     throw ".NET 10 SDK is required. Install it from https://dotnet.microsoft.com/download/dotnet/10.0"
 }
 
+Push-Location $Root
+try {
+    npm run dashboard:build
+    if ($LASTEXITCODE -ne 0) { throw "dashboard:build failed with exit code $LASTEXITCODE" }
+}
+finally {
+    Pop-Location
+}
+
 $Existing = Get-Process -Name "PetRunner" -ErrorAction SilentlyContinue
 if ($Existing) {
     $Existing | Stop-Process

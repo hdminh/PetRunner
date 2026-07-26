@@ -17,5 +17,11 @@ internal static class DashboardRouteTests
         Check.Equal("misty", DashboardRoute.Parse("/abc123/api/v1/pets/misty", token).Value!);
         Check.Equal(DashboardRouteKind.ChoosePetsDirectory, DashboardRoute.Parse("/abc123/api/v1/pets/choose-directory", token).Kind);
         Check.Equal(DashboardRouteKind.RevealPetsDirectory, DashboardRoute.Parse("/abc123/api/v1/pets/reveal-directory", token).Kind);
+        Check.Equal(DashboardRouteKind.State, DashboardRoute.Parse("/abc123/api/v1/overview", token).Kind);
+        Check.Equal(DashboardRouteKind.Asset, DashboardRoute.Parse("/abc123/assets/index-abc123.js", token).Kind);
+        Check.Equal("assets/index-abc123.js", DashboardRoute.Parse("/abc123/assets/index-abc123.js", token).Value!);
+        Check.Equal(DashboardRouteKind.NotFound, DashboardRoute.Parse("/abc123/assets/nested/file.js", token).Kind);
+        Check.Equal(DashboardRouteKind.PetSpritesheet, DashboardRoute.Parse("/abc123/api/v1/pets/maomao/spritesheet", token).Kind);
+        Check.Equal("maomao", DashboardRoute.Parse("/abc123/api/v1/pets/maomao/spritesheet", token).Value!);
     }
 }

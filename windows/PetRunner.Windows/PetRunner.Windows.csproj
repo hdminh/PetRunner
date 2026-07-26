@@ -13,12 +13,13 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>../../Assets/AppIcon.ico</ApplicationIcon>
     <AssemblyName>PetRunner</AssemblyName>
-    <Version>0.2.2</Version>
+    <Version>0.2.3</Version>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../PetRunner.Core/PetRunner.Core.csproj" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
     <EmbeddedResource Include="../../Assets/AppIcon.ico" LogicalName="PetRunner.AppIcon.ico" />
     <Content Include="../../Assets/DefaultPets/**/*" Link="DefaultPets/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="../../DashboardWeb/**/*" Link="DashboardWeb/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../DashboardWeb/dist/**/*" Link="DashboardWeb/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -74,6 +74,58 @@ struct PetImportServiceTests {
         #expect(FileManager.default.fileExists(atPath: pets.appendingPathComponent("maomao/pet.json").path))
     }
 
+    @Test func installsAllMissingBundledPets() throws {
+        let workspace = try makeWorkspace()
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        let bundledRoot = workspace.appendingPathComponent("DefaultPets", isDirectory: true)
+        let misty = bundledRoot.appendingPathComponent("misty", isDirectory: true)
+        let broken = bundledRoot.appendingPathComponent("broken", isDirectory: true)
+        let pets = workspace.appendingPathComponent("pets", isDirectory: true)
+        try FileManager.default.createDirectory(at: misty, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
+        try writePetFiles(in: misty, id: "misty")
+        try Data(#"{"id":"broken"}"#.utf8).write(to: broken.appendingPathComponent("pet.json"))
+
+        let installer = DefaultPetInstaller(loader: stubLoader())
+        #expect(try installer.installAllMissing(bundledRoot: bundledRoot, into: pets) == 1)
+        #expect(FileManager.default.fileExists(atPath: pets.appendingPathComponent("misty/pet.json").path))
+        #expect(!FileManager.default.fileExists(atPath: pets.appendingPathComponent("broken", isDirectory: true).path))
+        #expect(try installer.installAllMissing(bundledRoot: bundledRoot, into: pets) == 0)
+    }
+
+    @Test func rejectsUnsafePetIDsWhenSeeding() throws {
+        let workspace = try makeWorkspace()
+        defer { try? FileManager.default.removeItem(at: workspace) }
+        let pets = workspace.appendingPathComponent("pets", isDirectory: true)
+        try FileManager.default.createDirectory(at: pets, withIntermediateDirectories: true)
+
+        let escapePkg = workspace.appendingPathComponent("escape-pkg", isDirectory: true)
+        try FileManager.default.createDirectory(at: escapePkg, withIntermediateDirectories: true)
+        try writePetFiles(in: escapePkg, id: "../escape")
+
+        let installer = DefaultPetInstaller(loader: stubLoader())
+        do {
+            _ = try installer.installIfMissing(bundledPackage: escapePkg, into: pets)
+            Issue.record("expected relative escape id to throw")
+        } catch let error as DefaultPetInstallError {
+            #expect(error == .unsafePetID("../escape"))
+        }
+        #expect(!FileManager.default.fileExists(atPath: workspace.appendingPathComponent("escape", isDirectory: true).path))
+
+        let rootedPkg = workspace.appendingPathComponent("rooted-pkg", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootedPkg, withIntermediateDirectories: true)
+        try writePetFiles(in: rootedPkg, id: "/tmp/petrunner-install-escape-test")
+        do {
+            _ = try installer.installIfMissing(bundledPackage: rootedPkg, into: pets)
+            Issue.record("expected rooted id to throw")
+        } catch let error as DefaultPetInstallError {
+            #expect(error == .unsafePetID("/tmp/petrunner-install-escape-test"))
+        }
+        #expect(!FileManager.default.fileExists(atPath: "/tmp/petrunner-install-escape-test"))
+
+        #expect(try DefaultPetInstaller.requireSafePetID("  safe-pet  ") == "safe-pet")
+    }
+
     private func stubLoader() -> PetPackageLoader {
         PetPackageLoader(metadataReader: ImportStubMetadataReader(size: CGSize(width: 1536, height: 1872)))
     }

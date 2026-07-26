@@ -83,6 +83,7 @@ function App() {
   const [providerPanel, setProviderPanel] = useState<ProviderPanel>(initial.providerPanel);
   const [range, setRange] = useState<ProviderSpendRange>("7d");
   const [state, setState] = useState<AppState>({});
+  const [capabilitiesReady, setCapabilitiesReady] = useState(false);
   const [usage, setUsage] = useState<UsageResponse>(blankUsage);
   const [activity, setActivity] = useState<ActivityStats>(blankActivity);
   const [usageSessions, setUsageSessions] = useState<UsageSession[]>([]);
@@ -99,15 +100,31 @@ function App() {
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
     try {
+      const rawState = await api.get<unknown>("overview").catch(() => api.get<unknown>("state"));
+      const nextState = normalizeState(rawState);
+      setState(nextState);
+      setCapabilitiesReady(true);
+      const usageEnabled = nextState.capabilities?.usage !== false;
+      if (!usageEnabled) {
+        setUsage(blankUsage);
+        setActivity(blankActivity);
+        setUsageSessions([]);
+        setUsageProjects([]);
+        setUsageModels([]);
+        setActivityError(null);
+        setSessionsError(null);
+        setProjectsError(null);
+        setModelsError(null);
+        setError(null);
+        setLastUpdated(new Date());
+        return;
+      }
       const usageQuery: Record<string, string> = { range: apiRangeForProviderSpend(range) };
       // Provider detail charts need the full filtered window. Without a provider
       // filter, the shared preview truncates recent Codex rows over older Cursor days.
       if (view === "provider") usageQuery.provider = selectedProvider;
-      const [rawState, rawUsage] = await Promise.all([
-        api.get<unknown>("overview").catch(() => api.get<unknown>("state")),
-        api.get<unknown>("usage", usageQuery),
-      ]);
-      setState(normalizeState(rawState)); setUsage(normalizeUsage(rawUsage));
+      const rawUsage = await api.get<unknown>("usage", usageQuery);
+      setUsage(normalizeUsage(rawUsage));
       const [activityResult, sessionsResult, projectsResult, modelsResult] = await Promise.allSettled([
         api.get<unknown>("activity", { range: "all" }),
         api.get<unknown>("sessions", { range: "all" }),
@@ -130,6 +147,18 @@ function App() {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { const timer = window.setInterval(() => void load(true), 15_000); return () => window.clearInterval(timer); }, [load]);
+
+  const usageEnabled = capabilitiesReady && state.capabilities?.usage !== false;
+  const monitorEnabled = capabilitiesReady && state.capabilities?.agentMonitor !== false;
+  // Until capabilities arrive, render Pets only so usage/monitor chrome cannot flash.
+  // Keep `view` state unchanged so macOS can resume overview/monitor after load.
+  const effectiveView: View = !capabilitiesReady
+    ? "pets"
+    : !usageEnabled && (view === "overview" || view === "provider" || view === "analytics")
+      ? "pets"
+      : !monitorEnabled && view === "monitor"
+        ? (usageEnabled ? "overview" : "pets")
+        : view;
 
   // Normalize empty hash on first paint so reload restores a concrete route.
   useEffect(() => {
@@ -197,6 +226,19 @@ function App() {
     }, next.mode ?? "push");
   }, [analyticsTab, selectedProvider, providerPanel]);
 
+  // Pets-only hosts advertise usage:false — keep the hash on #/pets after capabilities load.
+  useEffect(() => {
+    if (!capabilitiesReady) return;
+    if (usageEnabled) return;
+    if (view === "pets") return;
+    navigate({ view: "pets", mode: "replace" });
+  }, [capabilitiesReady, usageEnabled, view, navigate]);
+
+  useEffect(() => {
+    if (!capabilitiesReady || monitorEnabled || view !== "monitor") return;
+    navigate({ view: usageEnabled ? "overview" : "pets", mode: "replace" });
+  }, [capabilitiesReady, monitorEnabled, usageEnabled, view, navigate]);
+
   const grouped = useMemo(() => groupByProvider(usage.records), [usage.records]);
   const providerInfos = useMemo(() => providers.map((id) => state.providers?.[id] ?? defaultProviderInfo(id)), [state.providers]);
   const enabledCount = providerInfos.filter((info) => info.enabled).length;
@@ -211,7 +253,18 @@ function App() {
   const openAnalytics = () => { navigate({ view: "analytics", analyticsTab }); };
   const setAnalyticsViewTab = (tab: AnalyticsTab) => { navigate({ view: "analytics", analyticsTab: tab }); };
   const openProviders = () => { navigate({ view: "provider" }); };
-  const refresh = async () => { try { await api.post("refresh"); window.setTimeout(() => void load(), 350); } catch (exception) { setError(exception instanceof Error ? exception.message : "Could not refresh usage."); } };
+  const refresh = async () => {
+    if (!usageEnabled) {
+      await load();
+      return;
+    }
+    try {
+      await api.post("refresh");
+      window.setTimeout(() => void load(), 350);
+    } catch (exception) {
+      setError(exception instanceof Error ? exception.message : "Could not refresh usage.");
+    }
+  };
   const setProviderEnabled = async (provider: Provider, enabled: boolean) => {
     try {
       await api.put(`providers/${provider}`, { enabled });
@@ -234,8 +287,14 @@ function App() {
     }}>Skip to content</a>
     <header className="topbar">
       <div className="brand">
-        <button className="wordmark" onClick={() => navigate({ view: "overview" })} aria-label="PetRunner usage overview"><AppMark /><strong>PetRunner</strong><em>usage</em></button>
-        {monitorProvider && monitorTodayCost != null ? (
+        <button
+          className="wordmark"
+          onClick={() => navigate({ view: usageEnabled ? "overview" : "pets" })}
+          aria-label={usageEnabled ? "PetRunner usage overview" : "PetRunner pets"}
+        >
+          <AppMark /><strong>PetRunner</strong>{usageEnabled ? <em>usage</em> : null}
+        </button>
+        {usageEnabled && monitorProvider && monitorTodayCost != null ? (
           <span
             className="monitor-spend"
             title={`${displayProvider(monitorProvider)} today’s spend`}
@@ -247,11 +306,17 @@ function App() {
         ) : null}
       </div>
       <nav aria-label="Dashboard">
-        <button className={view === "overview" ? "active" : ""} onClick={() => navigate({ view: "overview" })}>Overview</button>
-        <button className={view === "provider" ? "active" : ""} onClick={() => openProviders()}>Providers</button>
-        <button className={view === "analytics" ? "active" : ""} onClick={() => openAnalytics()}>Analytics</button>
-        <button className={view === "pets" ? "active" : ""} onClick={() => navigate({ view: "pets" })}>Pets</button>
-        <button className={view === "monitor" ? "active" : ""} onClick={() => navigate({ view: "monitor" })}>Monitor</button>
+        {capabilitiesReady && usageEnabled ? (
+          <>
+            <button className={effectiveView === "overview" ? "active" : ""} onClick={() => navigate({ view: "overview" })}>Overview</button>
+            <button className={effectiveView === "provider" ? "active" : ""} onClick={() => openProviders()}>Providers</button>
+            <button className={effectiveView === "analytics" ? "active" : ""} onClick={() => openAnalytics()}>Analytics</button>
+          </>
+        ) : null}
+        <button className={effectiveView === "pets" ? "active" : ""} onClick={() => navigate({ view: "pets" })}>Pets</button>
+        {capabilitiesReady && monitorEnabled ? (
+          <button className={effectiveView === "monitor" ? "active" : ""} onClick={() => navigate({ view: "monitor" })}>Monitor</button>
+        ) : null}
       </nav>
       <div className="top-actions">
         <span className={`connection ${error ? "offline" : ""}`}>{error ? "Offline" : lastUpdated ? "Local" : "Connecting"}</span>
@@ -263,9 +328,9 @@ function App() {
     </header>
     {error && <div className="notice" role="alert"><span>{error}</span><button onClick={() => void load()}>Retry</button></div>}
     <main id="content">
-      {view === "overview" && <Overview state={state} usage={usage} grouped={grouped} activity={activity} activityError={activityError} range={range} onProvider={selectProvider} onOpenProviders={openProviders} />}
-      {view === "provider" && <ProviderView provider={selectedProvider} panel={providerPanel} onPanelChange={setProvidersPanel} providerInfos={providerInfos} enabledCount={enabledCount} records={grouped[selectedProvider]} summary={usage.providers[selectedProvider]} range={range} setRange={setRange} onProvider={selectProvider} onSetEnabled={setProviderEnabled} info={state.providers?.[selectedProvider]} cursor={state.cursor} budget={state.settings?.budgets?.[selectedProvider]} onSaveBudget={async (budget) => { await api.put("budgets", { budgets: { [selectedProvider]: budget } }); await load(); }} />}
-      {view === "analytics" && (
+      {effectiveView === "overview" && <Overview state={state} usage={usage} grouped={grouped} activity={activity} activityError={activityError} range={range} onProvider={selectProvider} onOpenProviders={openProviders} />}
+      {effectiveView === "provider" && <ProviderView provider={selectedProvider} panel={providerPanel} onPanelChange={setProvidersPanel} providerInfos={providerInfos} enabledCount={enabledCount} records={grouped[selectedProvider]} summary={usage.providers[selectedProvider]} range={range} setRange={setRange} onProvider={selectProvider} onSetEnabled={setProviderEnabled} info={state.providers?.[selectedProvider]} cursor={state.cursor} budget={state.settings?.budgets?.[selectedProvider]} onSaveBudget={async (budget) => { await api.put("budgets", { budgets: { [selectedProvider]: budget } }); await load(); }} />}
+      {effectiveView === "analytics" && (
         <section className="page analytics-page">
           <AnalyticsPageTabs active={analyticsTab} onChange={setAnalyticsViewTab} />
           {analyticsTab === "sessions" && <AnalyticsSessions sessions={usageSessions} error={sessionsError} provider={selectedProvider} onProviderChange={setAnalyticsProvider} />}
@@ -273,10 +338,14 @@ function App() {
           {analyticsTab === "models" && <AnalyticsModels models={usageModels} error={modelsError} provider={selectedProvider} onProviderChange={setAnalyticsProvider} />}
         </section>
       )}
-      {view === "pets" && <PetsView state={state} api={api} onReload={async () => { await load(true); }} onError={setError} />}
-      {view === "monitor" && <MonitorView state={state} api={api} onReload={async () => { await load(true); }} onError={setError} />}
+      {effectiveView === "pets" && <PetsView state={state} api={api} onReload={async () => { await load(true); }} onError={setError} />}
+      {effectiveView === "monitor" && <MonitorView state={state} api={api} onReload={async () => { await load(true); }} onError={setError} />}
     </main>
-    <footer>Usage stays on this device. Claude and Codex costs are calculated estimates. Cursor usage is shown only when Cursor reports it.</footer>
+    {usageEnabled ? (
+      <footer>Usage stays on this device. Claude and Codex costs are calculated estimates. Cursor usage is shown only when Cursor reports it.</footer>
+    ) : (
+      <footer>Pets stay on this device. Download more packages from pet-runner.com, then import them here.</footer>
+    )}
   </div>;
 }
 

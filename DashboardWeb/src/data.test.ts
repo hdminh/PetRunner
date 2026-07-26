@@ -125,8 +125,20 @@ describe("provider links", () => {
     expect(state.settings?.petsDirectoryEditable).toBe(true);
     expect(state.capabilities?.petRemove).toBe(true);
     expect(state.capabilities?.petsDirectoryBrowse).toBe(true);
+    expect(state.capabilities?.usage).toBe(true);
+    expect(state.capabilities?.agentMonitor).toBe(true);
     expect(state.settings?.budgets?.codex).toEqual({ dailyUSD: 1, monthlyUSD: 20 });
     expect(state.failures).toEqual([{ id: "broken", message: "bad atlas" }]);
+  });
+
+  it("normalizes pets-only capability flags", () => {
+    const state = normalizeState({
+      capabilities: { usage: false, sessions: false, agentMonitor: false, petImport: true },
+    });
+    expect(state.capabilities?.usage).toBe(false);
+    expect(state.capabilities?.sessions).toBe(false);
+    expect(state.capabilities?.agentMonitor).toBe(false);
+    expect(state.capabilities?.petImport).toBe(true);
   });
 
   it("normalizes agent monitor settings and hook paths", () => {

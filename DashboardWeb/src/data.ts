@@ -159,6 +159,8 @@ export function normalizeState(value: unknown): AppState {
     monitor: normalizeMonitor(object.monitor),
     failures,
     capabilities: {
+      usage: capabilities.usage === undefined ? true : Boolean(capabilities.usage),
+      sessions: capabilities.sessions === undefined ? true : Boolean(capabilities.sessions),
       petImport: capabilities.petImport === undefined ? true : Boolean(capabilities.petImport),
       petRemove: capabilities.petRemove === undefined ? true : Boolean(capabilities.petRemove),
       statusItem: Boolean(capabilities.statusItem),

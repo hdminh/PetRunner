@@ -2,10 +2,11 @@
 
 Local desktop pet runner and usage dashboard for Codex-compatible custom pets.
 Use the same pets while you work with Claude, Cursor, or Codex—PetRunner never
-starts, embeds, or connects to Codex. It also tracks local usage and spend,
-shows under-pet Quota Bar remaining daily / monthly / plan meters, and (on
-macOS) an optional Agent Monitor bubble. Default library:
-`${CODEX_HOME:-~/.codex}/pets`.
+starts, embeds, or connects to Codex. On **macOS** it also tracks local usage
+and spend, shows under-pet Quota Bar meters, and an optional Agent Monitor
+bubble. On **Windows** the Store/host cut focuses on the desktop pet and Pets
+library window (WebView2); usage and quota UI stay unwired there for now.
+Default library: `${CODEX_HOME:-~/.codex}/pets`.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/hero.png" alt="PetRunner desktop pet with Agent Monitor bubble and Quota Bars" height="420" />
@@ -60,31 +61,41 @@ Codex-format pet packages render locally whether you use Claude, Cursor, or
 Codex—you do not need Codex installed. Default library:
 `${CODEX_HOME:-~/.codex}/pets` (override with `--pets-dir` or the setup wizard).
 
-On first launch PetRunner seeds the bundled **maomao** pet when that package is
-missing and prefers it when nothing else is selected.
+On first launch PetRunner seeds every missing package under the bundled
+`DefaultPets/` library (today that is **maomao**) and prefers that default when
+nothing else is selected.
 
 - Download more pets from [pet-runner.com](https://pet-runner.com) (any provider)
-- Import a ZIP (or folder) from the **Pets** tab
+- Import a ZIP (or folder) from the **Pets** tab / Windows **Open Pets…** window
 - Or, if you already use Codex pets: Petdex / `npx codex-pets add <id>`
 
 Drag the pet to move it, throw it toward a screen edge, hover or click to jump,
-or drag the lower-right handle to resize. Use the menu-bar / tray paw (or the
-pet’s context menu) to open the Dashboard, enable Agent Monitor (macOS),
-show/hide or set Quota Bar mode, reload pets, change size, toggle autonomous
-motion, or quit.
+or drag the lower-right handle to resize.
 
-The under-pet **Quota Bar** shows remaining daily / monthly / plan usage
+**macOS** menu bar: open the Dashboard, enable Agent Monitor, show/hide or set
+Quota Bar mode, reload pets, change size, toggle autonomous motion, or quit.
+
+**Windows** tray: Pets / Appearance / Behavior / Library — switch pets, size,
+hide/show, autonomy, **Open Pets…** (WebView2 library), reload, or download more
+pets from pet-runner.com. Quota Bar and usage dashboard chrome are not part of
+the Windows Store cut.
+
+The under-pet **Quota Bar** (macOS) shows remaining daily / monthly / plan usage
 (Show / Auto / Daily / Monthly / Plan from the paw menu or the Dashboard
-Monitor tab). On macOS it follows the active Agent Monitor provider; on Windows
-it follows the enabled Claude/Codex usage provider (budget modes). Plan meters
-are macOS-only today. Collapse the bars to a heart meter on macOS.
+Monitor tab). Plan meters are macOS-only today. Collapse the bars to a heart
+meter on macOS.
 
 ## Dashboard
 
-Open the Dashboard from the menu bar / tray icon, Applications (macOS), or the
+On **macOS**, open the Dashboard from the menu bar icon, Applications, or the
 pet’s context menu. Claude and Codex usage come from local session files on this
 device. Cursor spend and analytics (when enabled) come from Cursor’s usage API
 using the local Cursor.app login—Cursor Usage/Analytics is macOS-only today.
+
+On **Windows**, **Open Pets…** opens a WebView2 window on the Pets library
+(preview, import, autonomy, folder). Full Usage / Analytics / Monitor dashboard
+chrome is not enabled in the Windows Store cut; Core usage parsers remain for a
+later embed.
 
 When Agent Monitor is enabled (macOS), the top bar shows today’s spend for the
 active Monitor provider.
@@ -131,8 +142,7 @@ from lifecycle hooks—PetRunner never sends them to an LLM. Deeper hook and
 bubble behavior is in [docs/RUN_LOCAL.md](docs/RUN_LOCAL.md).
 
 Configure the under-pet Quota Bar here (show/hide and Auto / Daily / Monthly /
-Plan)—also available from the menu-bar / tray **Quota Bar** menu on macOS and
-Windows.
+Plan)—also available from the menu-bar **Quota Bar** menu on macOS.
 
 ![Monitor tab](https://raw.githubusercontent.com/hdminh/PetRunner/main/docs/images/monitor.png)
 
@@ -173,10 +183,13 @@ swift test
 dotnet run --project windows\PetRunner.Tests\PetRunner.Tests.csproj
 ```
 
-`./script/build_and_run.sh` stages `dist/PetRunner.app` and opens it. Full
-platform notes (including MSIX packaging) are in
-[docs/RUN_LOCAL.md](docs/RUN_LOCAL.md). Contributor contracts and the
-macOS/Windows capability matrix live in [AGENTS.md](AGENTS.md).
+`./script/build_and_run.sh` stages `dist/PetRunner.app` and opens it.
+`.\script\build_and_run.ps1` runs `npm run dashboard:build`, then the WPF host
+(WebView2 Runtime required). Full platform notes (including MSIX packaging) are
+in [docs/RUN_LOCAL.md](docs/RUN_LOCAL.md). Contributor contracts and the
+macOS/Windows capability matrix live in [AGENTS.md](AGENTS.md). Windows Store
+host architecture:
+[docs/solutions/architecture-patterns/windows-store-pet-only-host.md](docs/solutions/architecture-patterns/windows-store-pet-only-host.md).
 
 ## Publishing packages
 

@@ -61,8 +61,9 @@ internal sealed class DashboardServer : IDisposable
     private const int PortAttempts = 20;
     private const int MaxBodyBytes = 64 * 1024;
     private readonly string assetDirectory;
-    private readonly LocalUsageIndex usage;
+    private readonly LocalUsageIndex? usage;
     private readonly DashboardCallbacks callbacks;
+    private readonly bool usageEnabled;
     private readonly string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
     private readonly CancellationTokenSource cancellation = new();
     private readonly JsonSerializerOptions jsonOptions = new(JsonSerializerDefaults.Web)
@@ -73,21 +74,25 @@ internal sealed class DashboardServer : IDisposable
     private HttpListener? listener;
     private Task? listenerTask;
 
-    public DashboardServer(string assetDirectory, LocalUsageIndex usage, DashboardCallbacks callbacks)
+    public DashboardServer(string assetDirectory, DashboardCallbacks callbacks, LocalUsageIndex? usage = null)
     {
         this.assetDirectory = Path.GetFullPath(assetDirectory);
-        this.usage = usage;
         this.callbacks = callbacks;
+        this.usage = usage;
+        usageEnabled = usage is not null;
     }
 
     public int Port { get; private set; }
     public string Origin => $"http://127.0.0.1:{Port}";
     public string DashboardUrl => $"{Origin}/{token}/";
+    public string PetsUrl => $"{DashboardUrl}#/pets";
 
     public void Start()
     {
         if (listener is not null) return;
         if (!Directory.Exists(assetDirectory)) throw new DirectoryNotFoundException($"Dashboard assets are missing: {assetDirectory}");
+        if (!File.Exists(Path.Combine(assetDirectory, "index.html")))
+            throw new FileNotFoundException($"Dashboard index.html is missing under {assetDirectory}. Run `npm run dashboard:build` first.");
         for (var candidate = PreferredPort; candidate < PreferredPort + PortAttempts; candidate++)
         {
             var attempt = new HttpListener();
@@ -139,23 +144,31 @@ internal sealed class DashboardServer : IDisposable
                     break;
                 case DashboardRouteKind.Usage:
                     RequireMethod(context.Request, "GET");
+                    RequireUsage();
                     await WriteJson(context.Response, UsagePayload(context.Request));
                     break;
                 case DashboardRouteKind.Sessions:
                     RequireMethod(context.Request, "GET");
+                    RequireUsage();
                     await WriteJson(context.Response, SessionsPayload(context.Request));
                     break;
                 case DashboardRouteKind.Session:
                     RequireMethod(context.Request, "GET");
+                    RequireUsage();
                     await WriteJson(context.Response, SessionPayload(route.Value!));
                     break;
                 case DashboardRouteKind.PetPreview:
                     RequireMethod(context.Request, "GET");
                     await WritePreview(context.Response, context.Request, route.Value!);
                     break;
+                case DashboardRouteKind.PetSpritesheet:
+                    RequireMethod(context.Request, "GET");
+                    await WriteSpritesheet(context.Response, route.Value!);
+                    break;
                 case DashboardRouteKind.RefreshUsage:
                     RequireMethod(context.Request, "POST");
-                    _ = usage.Records(forceRefresh: true);
+                    RequireUsage();
+                    _ = usage!.Records(forceRefresh: true);
                     await WriteJson(context.Response, new { ok = true });
                     break;
                 case DashboardRouteKind.Pet:
@@ -226,41 +239,40 @@ internal sealed class DashboardServer : IDisposable
         }
     }
 
+    private void RequireUsage()
+    {
+        if (!usageEnabled)
+            throw new DashboardApiException("unsupported_action", "Usage metrics are not available in this PetRunner build.", 409);
+    }
+
     private object State()
     {
         var snapshot = callbacks.Snapshot();
-        var records = EnabledRecords(snapshot, usage.Records());
-        var today = UsageAnalytics.Filter(records, new UsageFilter("today"));
-        var month = UsageAnalytics.Filter(records, new UsageFilter("month"));
-        var todayTotals = UsageAnalytics.Aggregate(today);
-        var monthTotals = UsageAnalytics.Aggregate(month);
-        var topModel = records.Where(record => !string.IsNullOrWhiteSpace(record.Model))
-            .GroupBy(record => record.Model!, StringComparer.OrdinalIgnoreCase)
-            .OrderByDescending(group => group.Sum(record => record.Tokens.Total)).FirstOrDefault()?.Key;
-        var inputTotal = todayTotals.Tokens.Input + todayTotals.Tokens.CachedInput;
         return new
         {
             platform = "windows",
             capabilities = new
             {
-                usage = true,
-                sessions = true,
+                usage = usageEnabled,
+                sessions = usageEnabled,
                 petImport = true,
                 petRemove = true,
                 statusItem = false,
                 clearHistory = false,
                 cursorUsage = false,
+                petPreview = true,
                 petsDirectory = true,
                 petsDirectoryBrowse = snapshot.PetsDirectoryEditable,
+                agentMonitor = false,
             },
             kpis = new
             {
-                todayTokens = todayTotals.Tokens.Total,
-                todayCost = todayTotals.KnownCostUsd,
-                cacheRatio = inputTotal == 0 ? 0 : (double)todayTotals.Tokens.CachedInput / inputTotal,
-                topModel,
-                sessionCount = todayTotals.SessionCount,
-                monthCost = monthTotals.KnownCostUsd,
+                todayTokens = 0,
+                todayCost = 0,
+                cacheRatio = 0,
+                topModel = (string?)null,
+                sessionCount = 0,
+                monthCost = 0,
             },
             providers = new
             {
@@ -375,7 +387,7 @@ internal sealed class DashboardServer : IDisposable
     private object SessionPayload(string key)
     {
         var snapshot = callbacks.Snapshot();
-        var records = EnabledRecords(snapshot, usage.Records());
+        var records = EnabledRecords(snapshot, usage!.Records());
         var session = UsageAnalytics.Sessions(records).FirstOrDefault(candidate => SessionKey(candidate) == key)
             ?? throw new DashboardApiException("session_not_found", "Session not found.", 404);
         var matching = records.Where(record => record.Provider == session.Provider && record.SessionId == session.Id).OrderBy(record => record.OccurredAt).ToArray();
@@ -416,7 +428,7 @@ internal sealed class DashboardServer : IDisposable
         {
             var snapshot = callbacks.Snapshot();
             return UsageAnalytics.Filter(
-                EnabledRecords(snapshot, usage.Records()),
+                EnabledRecords(snapshot, usage!.Records()),
                 new UsageFilter(range, provider, request.QueryString["model"]));
         }
         catch (ArgumentException error) { throw new DashboardApiException("invalid_range", error.Message); }
@@ -443,16 +455,42 @@ internal sealed class DashboardServer : IDisposable
         await response.OutputStream.WriteAsync(png);
     }
 
-    private async Task WriteAsset(HttpListenerResponse response, string name)
+    private async Task WriteSpritesheet(HttpListenerResponse response, string petId)
     {
-        var path = Path.Combine(assetDirectory, name);
-        if (!File.Exists(path)) throw new DashboardApiException("asset_not_found", "Dashboard asset not found.", 404);
-        var bytes = await File.ReadAllBytesAsync(path, cancellation.Token);
-        response.ContentType = name.EndsWith(".css", StringComparison.Ordinal) ? "text/css; charset=utf-8"
-            : name.EndsWith(".js", StringComparison.Ordinal) ? "text/javascript; charset=utf-8"
-            : "text/html; charset=utf-8";
+        var pet = callbacks.Snapshot().Pets.FirstOrDefault(candidate => string.Equals(candidate.Id, petId, StringComparison.Ordinal));
+        if (pet is null) throw new DashboardApiException("pet_not_found", "Pet not found.", 404);
+        if (!File.Exists(pet.SpritesheetPath)) throw new DashboardApiException("asset_not_found", "Spritesheet not found.", 404);
+        var bytes = await File.ReadAllBytesAsync(pet.SpritesheetPath, cancellation.Token);
+        response.ContentType = pet.SpritesheetPath.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+            ? "image/png"
+            : "image/webp";
         response.ContentLength64 = bytes.Length;
         await response.OutputStream.WriteAsync(bytes, cancellation.Token);
+    }
+
+    private async Task WriteAsset(HttpListenerResponse response, string name)
+    {
+        var path = Path.GetFullPath(Path.Combine(assetDirectory, name));
+        var root = assetDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        if (!path.StartsWith(root, StringComparison.OrdinalIgnoreCase) || !File.Exists(path))
+            throw new DashboardApiException("asset_not_found", "Dashboard asset not found.", 404);
+        var bytes = await File.ReadAllBytesAsync(path, cancellation.Token);
+        response.ContentType = ContentTypeFor(name);
+        response.ContentLength64 = bytes.Length;
+        await response.OutputStream.WriteAsync(bytes, cancellation.Token);
+    }
+
+    private static string ContentTypeFor(string name)
+    {
+        if (name.EndsWith(".css", StringComparison.OrdinalIgnoreCase)) return "text/css; charset=utf-8";
+        if (name.EndsWith(".js", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".mjs", StringComparison.OrdinalIgnoreCase))
+            return "text/javascript; charset=utf-8";
+        if (name.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) return "application/json; charset=utf-8";
+        if (name.EndsWith(".svg", StringComparison.OrdinalIgnoreCase)) return "image/svg+xml";
+        if (name.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) return "image/png";
+        if (name.EndsWith(".woff2", StringComparison.OrdinalIgnoreCase)) return "font/woff2";
+        return "text/html; charset=utf-8";
     }
 
     private async Task<T> ReadJson<T>(HttpListenerRequest request)

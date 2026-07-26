@@ -8,13 +8,13 @@ PetRunner
 
 PetRunner brings compatible pixel pets to your Windows desktop. Choose a pet from your local library, then let it sit, move, jump, and react while you work.
 
-Use the PetRunner tray icon to switch pets, set a comfortable size, reload your collection, or reset a pet's position. You can drag a pet anywhere on screen, throw it toward an edge, click it to jump, and resize it from its lower-right corner.
+Use the PetRunner tray icon to switch pets, set a comfortable size, reload your collection, or reset a pet's position. Open Pets from the tray to preview your library, import packages, and adjust autonomy settings. You can drag a pet anywhere on screen, throw it toward an edge, click it to jump, and resize it from its lower-right corner.
 
-For a little more life between tasks, enable Autonomous Pet and choose which actions are allowed and how often they happen. PetRunner is a standalone desktop renderer: it reads your local compatible pet library and does not start, embed, or connect to Codex.
+For a little more life between tasks, enable Autonomous Pet and choose which actions are allowed and how often they happen. Download more pets from pet-runner.com, then import them into your local library. PetRunner is a standalone desktop renderer: it reads your local compatible pet library and does not start, embed, or connect to Codex.
 
 ## What's new in this version
 
-First Microsoft Store release.
+Ships a bundled default pet (maomao) so the desktop companion appears on first launch without importing a package.
 
 ## Applicable license terms
 
@@ -24,6 +24,8 @@ MIT License. See the LICENSE file included with the app source and distribution.
 
 - Display compatible pixel pets as a lightweight desktop overlay
 - Choose and reload pets from your local pet library
+- Open Pets to preview, import, and manage packages
+- Download more pets from pet-runner.com
 - Drag, throw, click, and resize your pet
 - Pick Small, Medium, Large, or XL display sizes
 - Enable autonomous Walk, Wave, Jump, and Cry actions
@@ -78,7 +80,7 @@ hdminh
 
 1. `screenshot-01-desktop-overlay.png` — Pet overlay and tray controls
 2. `screenshot-02-pet-picker.png` — Switch/reload pets from the tray
-3. `screenshot-03-settings.png` — Autonomous Pet settings
+3. `screenshot-03-settings.png` — Open Pets window (library, preview, import)
 4. `screenshot-04-resize.png` — Dragging and resizing a pet
 
 All are 1366 × 768 PNG files.

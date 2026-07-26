@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
@@ -12,10 +13,9 @@ internal sealed class TrayController : IDisposable
     private readonly Action reload;
     private readonly Action toggleAutonomy;
     private readonly Action togglePetHidden;
-    private readonly Action toggleQuotaBarVisible;
-    private readonly Action<string> setQuotaBarMode;
     private readonly Action resetPosition;
-    private readonly Action openDashboard;
+    private readonly Action openPets;
+    private readonly Action downloadMorePets;
     private readonly Action quit;
     private readonly Icon applicationIcon;
     private readonly NotifyIcon icon;
@@ -27,10 +27,9 @@ internal sealed class TrayController : IDisposable
         Action reload,
         Action toggleAutonomy,
         Action togglePetHidden,
-        Action toggleQuotaBarVisible,
-        Action<string> setQuotaBarMode,
         Action resetPosition,
-        Action openDashboard,
+        Action openPets,
+        Action downloadMorePets,
         Action quit)
     {
         this.changePet = changePet;
@@ -38,10 +37,9 @@ internal sealed class TrayController : IDisposable
         this.reload = reload;
         this.toggleAutonomy = toggleAutonomy;
         this.togglePetHidden = togglePetHidden;
-        this.toggleQuotaBarVisible = toggleQuotaBarVisible;
-        this.setQuotaBarMode = setQuotaBarMode;
         this.resetPosition = resetPosition;
-        this.openDashboard = openDashboard;
+        this.openPets = openPets;
+        this.downloadMorePets = downloadMorePets;
         this.quit = quit;
         applicationIcon = LoadApplicationIcon();
         icon = new NotifyIcon
@@ -66,9 +64,7 @@ internal sealed class TrayController : IDisposable
         string? selectedId,
         double selectedWidth,
         bool autonomyEnabled,
-        bool petHidden,
-        bool quotaBarVisible = true,
-        string quotaBarMode = "auto")
+        bool petHidden)
     {
         foreach (var image in thumbnails.Values) image.Dispose();
         thumbnails.Clear();
@@ -76,10 +72,11 @@ internal sealed class TrayController : IDisposable
         menu.Items.Add(new ToolStripMenuItem("PetRunner") { Enabled = false });
         menu.Items.Add(new ToolStripSeparator());
 
-        var changePetMenu = new ToolStripMenuItem("Change Pet");
-        BuildPetMenu(changePetMenu, pets, selectedId);
-        menu.Items.Add(changePetMenu);
+        var petsMenu = new ToolStripMenuItem("Pets");
+        BuildPetMenu(petsMenu, pets, selectedId);
+        menu.Items.Add(petsMenu);
 
+        var appearanceMenu = new ToolStripMenuItem("Appearance");
         var sizeMenu = new ToolStripMenuItem("Size");
         foreach (var choice in new[] { ("Small", 80d), ("Medium", 112d), ("Large", 160d), ("XL", 224d) })
         {
@@ -90,45 +87,34 @@ internal sealed class TrayController : IDisposable
             item.Click += (_, _) => changeSize(choice.Item2);
             sizeMenu.DropDownItems.Add(item);
         }
-        menu.Items.Add(sizeMenu);
-
-        var autonomyItem = new ToolStripMenuItem("Autonomous Pet") { Checked = autonomyEnabled };
-        autonomyItem.Click += (_, _) => toggleAutonomy();
-        menu.Items.Add(autonomyItem);
-
-        var quotaMenu = new ToolStripMenuItem("Quota Bar");
-        var showQuota = new ToolStripMenuItem(quotaBarVisible ? "Hide Quota Bar" : "Show Quota Bar");
-        showQuota.Click += (_, _) => toggleQuotaBarVisible();
-        quotaMenu.DropDownItems.Add(showQuota);
-        quotaMenu.DropDownItems.Add(new ToolStripSeparator());
-        foreach (var mode in new[] { ("auto", "Auto"), ("daily", "Daily Limit"), ("monthly", "Monthly Limit"), ("plan", "Plan Quota") })
-        {
-            var item = new ToolStripMenuItem(mode.Item2)
-            {
-                Checked = string.Equals(quotaBarMode, mode.Item1, StringComparison.OrdinalIgnoreCase),
-                Enabled = quotaBarVisible,
-            };
-            var selected = mode.Item1;
-            item.Click += (_, _) => setQuotaBarMode(selected);
-            quotaMenu.DropDownItems.Add(item);
-        }
-        menu.Items.Add(quotaMenu);
-
+        appearanceMenu.DropDownItems.Add(sizeMenu);
         var hideItem = new ToolStripMenuItem(petHidden ? "Show Pet" : "Hide Pet")
         {
             Enabled = selectedId is not null || pets.Count > 0,
         };
         hideItem.Click += (_, _) => togglePetHidden();
-        menu.Items.Add(hideItem);
+        appearanceMenu.DropDownItems.Add(hideItem);
         var resetItem = new ToolStripMenuItem("Reset Position");
         resetItem.Click += (_, _) => resetPosition();
-        menu.Items.Add(resetItem);
-        var dashboardItem = new ToolStripMenuItem("Open Dashboard…");
-        dashboardItem.Click += (_, _) => openDashboard();
-        menu.Items.Add(dashboardItem);
+        appearanceMenu.DropDownItems.Add(resetItem);
+        menu.Items.Add(appearanceMenu);
+
+        var behaviorMenu = new ToolStripMenuItem("Behavior");
+        var autonomyItem = new ToolStripMenuItem("Autonomous Pet") { Checked = autonomyEnabled };
+        autonomyItem.Click += (_, _) => toggleAutonomy();
+        behaviorMenu.DropDownItems.Add(autonomyItem);
+        menu.Items.Add(behaviorMenu);
+
+        var libraryMenu = new ToolStripMenuItem("Library");
+        var openPetsItem = new ToolStripMenuItem("Open Pets…");
+        openPetsItem.Click += (_, _) => openPets();
+        libraryMenu.DropDownItems.Add(openPetsItem);
         var reloadItem = new ToolStripMenuItem("Reload Pets");
         reloadItem.Click += (_, _) => reload();
-        menu.Items.Add(reloadItem);
+        libraryMenu.DropDownItems.Add(reloadItem);
+        var downloadItem = new ToolStripMenuItem("Download more pets…");
+        downloadItem.Click += (_, _) => downloadMorePets();
+        libraryMenu.DropDownItems.Add(downloadItem);
         if (failures.Count > 0)
         {
             var unavailable = new ToolStripMenuItem($"Unavailable Pets ({failures.Count})");
@@ -136,8 +122,10 @@ internal sealed class TrayController : IDisposable
             {
                 unavailable.DropDownItems.Add(new ToolStripMenuItem(failure.Id) { Enabled = false, ToolTipText = failure.Message });
             }
-            menu.Items.Add(unavailable);
+            libraryMenu.DropDownItems.Add(unavailable);
         }
+        menu.Items.Add(libraryMenu);
+
         menu.Items.Add(new ToolStripSeparator());
         var quitItem = new ToolStripMenuItem("Quit PetRunner");
         quitItem.Click += (_, _) => quit();
@@ -178,7 +166,7 @@ internal sealed class TrayController : IDisposable
             var png = atlas.FramePng(new AtlasAddress(0, 0));
             using var stream = new MemoryStream(png);
             using var source = Image.FromStream(stream);
-            return new Bitmap(source, new Size(24, 26));
+            return new Bitmap(source, new Size(24, 24));
         }
         catch
         {

@@ -4,6 +4,15 @@ $Root = Split-Path -Parent $PSScriptRoot
 $Tests = Join-Path $Root "windows/PetRunner.Tests/PetRunner.Tests.csproj"
 $App = Join-Path $Root "windows/PetRunner.Windows/PetRunner.Windows.csproj"
 
+Push-Location $Root
+try {
+    npm run dashboard:build
+    if ($LASTEXITCODE -ne 0) { throw "dashboard:build failed with exit code $LASTEXITCODE" }
+}
+finally {
+    Pop-Location
+}
+
 dotnet run --configuration Release --project $Tests
 
 foreach ($Runtime in @("win-x64", "win-arm64")) {

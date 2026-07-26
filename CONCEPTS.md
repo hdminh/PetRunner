@@ -5,10 +5,24 @@ Shared domain vocabulary for this project — entities, named processes, and sta
 ## Platform scope
 
 ### Parity core
-Cross-platform capabilities that must stay aligned on macOS and Windows: pet package load/atlas/animation/physics, pets-dir defaults, user-initiated import/replace/delete, local loopback dashboard, Claude/Codex spend usage, and budget-based quota bars.
+Cross-platform capabilities that must stay aligned on macOS and Windows: pet package load/atlas/animation/physics, pets-dir defaults, user-initiated import/replace/delete, and the local Pets library surface (preview, import, autonomy, folder).
 
 ### macOS-advanced
-Capabilities that ship on macOS first and are not required for Windows parity in 0.3.x: Agent Monitor (hooks, IPC, session history), Cursor usage/analytics, and remote plan-quota windows.
+Capabilities that ship on macOS first and are not required for Windows parity in the Store cut: full Usage / Analytics dashboard, budget-based quota bars, Agent Monitor (hooks, IPC, session history), Cursor usage/analytics, and remote plan-quota windows.
+
+### Pets-only Store cut
+The Windows Store host composition that ships tray + overlay + WebView2 Pets library without enabling usage, sessions, quota-bar, or Agent Monitor chrome. Host capability flags advertise those surfaces as off while Core usage parsers may still exist for a later embed.
+
+## Pets library
+
+### Default pets seeding
+Copying every missing valid package from the app’s bundled default-pets root into the user pets library on launch, never overwriting an existing package, and preferring the built-in default id when nothing else is selected.
+
+### Path-safe pet id
+The rule that a package id used as a library folder name must be a single non-empty path segment — not `.`, `..`, separators, or a rooted/absolute path — and the resolved destination must stay inside the pets library root.
+
+### Capability-ready dashboard chrome
+The rule that Overview / Providers / Analytics / Monitor navigation stays hidden until host capability flags are known from a successful dashboard state response, so pets-only hosts do not flash disabled surfaces and full hosts can still resume their prior view.
 
 ## Agent Monitor
 

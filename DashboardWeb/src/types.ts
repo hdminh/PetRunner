@@ -95,6 +95,8 @@ export type AppState = {
   monitor?: MonitorSettings;
   failures?: { id: string; message: string }[];
   capabilities?: {
+    usage?: boolean;
+    sessions?: boolean;
     petImport?: boolean;
     petRemove?: boolean;
     statusItem?: boolean;

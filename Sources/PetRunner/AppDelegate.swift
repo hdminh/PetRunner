@@ -504,13 +504,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func installBundledDefaultPetIfNeeded() {
-        guard let bundled = Bundle.main.resourceURL?
-            .appendingPathComponent(DefaultPet.bundleRelativePath, isDirectory: true)
+        guard let bundledRoot = Bundle.main.resourceURL?
+            .appendingPathComponent(DefaultPet.bundleRootRelativePath, isDirectory: true)
         else { return }
         do {
-            _ = try DefaultPetInstaller().installIfMissing(bundledPackage: bundled, into: petsDirectory)
+            _ = try DefaultPetInstaller().installAllMissing(bundledRoot: bundledRoot, into: petsDirectory)
         } catch {
-            logger.error("Failed to install bundled default pet: \(error.localizedDescription, privacy: .public)")
+            logger.error("Failed to install bundled default pets: \(error.localizedDescription, privacy: .public)")
         }
     }
 

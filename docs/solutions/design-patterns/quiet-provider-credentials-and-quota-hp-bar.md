@@ -1,6 +1,7 @@
 ---
 title: Quiet Claude credential reuse with provider quota HP bar
 date: 2026-07-25
+last_updated: 2026-07-26
 category: design-patterns
 module: agent-monitor
 problem_type: design_pattern
@@ -12,6 +13,7 @@ applies_when:
   - "Under-pet HP bars must choose among plan quota windows and local spend budgets"
   - "Background paths must stay silent while explicit Refresh may prompt once and cache"
   - "Menu actions mirror overlay controls and must share the same handler"
+  - "Windows Store host leaves quota UI unwired; shared resolver stays in Core for later re-enable"
 tags:
   - claude-oauth
   - keychain
@@ -160,4 +162,5 @@ Treat status-menu and quick-actions callbacks as aliases of
 ## Related
 
 - [Separate live agent session state from durable session history](./local-agent-monitor-live-state-and-session-history.md) — live store, history, and recovery journal (Reset Monitor Bubble clears live presentation).
+- [Windows Store pet-only host with capability and WebView2 gates](../architecture-patterns/windows-store-pet-only-host.md) — Windows Store leaves quota UI unwired; shared resolver remains in Core.
 - [Run locally guide](../../RUN_LOCAL.md) — Agent Monitor setup and troubleshooting.
