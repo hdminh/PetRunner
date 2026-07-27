@@ -135,7 +135,7 @@ struct DashboardPetsHandler {
         let kind = nonemptyString(object["kind"])
         let tags: [String]?
         if let rawTags = object["tags"] as? [String] {
-            let cleaned = rawTags.compactMap(nonemptyString)
+            let cleaned = rawTags.compactMap { nonemptyString($0) }
             tags = cleaned.isEmpty ? nil : cleaned
         } else {
             tags = nil
