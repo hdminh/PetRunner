@@ -6,6 +6,13 @@ $App = Join-Path $Root "windows/PetRunner.Windows/PetRunner.Windows.csproj"
 
 Push-Location $Root
 try {
+    $ViteCmd = Join-Path $Root "node_modules/.bin/vite.cmd"
+    $ViteBin = Join-Path $Root "node_modules/.bin/vite"
+    if (-not ((Test-Path $ViteCmd) -or (Test-Path $ViteBin))) {
+        Write-Host "Installing npm dependencies (vite not found in node_modules)..."
+        npm install
+        if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE" }
+    }
     npm run dashboard:build
     if ($LASTEXITCODE -ne 0) { throw "dashboard:build failed with exit code $LASTEXITCODE" }
 }
